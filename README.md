@@ -12,6 +12,8 @@ SeedVR2 video upscale · Krea2 image generation · 3D camera · storyboard · hi
 > the install scripts fetch them from the official sources and verify every SHA-256.
 > 本 repo 只包含面板**程式碼與下載腳本**，不含模型權重；安裝時由腳本自官方來源下載並核對 SHA-256。
 
+![panel](docs/panel.png)
+
 | Text-to-Video (HD two-pass) | SeedVR2 upscale (before → after) |
 | --- | --- |
 | ![text to video](docs/example_text_to_video.png) | ![seedvr2 upscale](docs/example_seedvr2_upscale.png) |
