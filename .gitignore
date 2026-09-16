@@ -1,0 +1,24 @@
+# Allowlist: ignore everything, then re-include only source. Model weights, LoRAs (including any
+# real-person face LoRAs), logs, backups and the ComfyUI install must never be committed.
+*
+!.gitignore
+!README.md
+!RTX4090_LOCAL.md
+!LICENSE
+!install.bat
+!*.py
+!run_webui.bat
+!restart_webui.bat
+!cancel_generation.bat
+!free_vram.bat
+!comfy_control.ps1
+!restart_portable.ps1
+
+# Later rules win: keep NSFW / abandoned model downloaders and runtime files out of the repo.
+download_ref2va_loras.py
+download_krea2_models.py
+download_pdd_models.py
+generation_history.jsonl
+*.bak
+*.log
+__pycache__/
