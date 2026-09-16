@@ -13,6 +13,9 @@
 !free_vram.bat
 !comfy_control.ps1
 !restart_portable.ps1
+# README illustrations (must open the docs folder and allow png inside it).
+!docs/
+!docs/*.png
 
 # Later rules win: keep NSFW / abandoned model downloaders and runtime files out of the repo.
 download_ref2va_loras.py
