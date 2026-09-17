@@ -2,6 +2,10 @@
 
 啟動：雙擊 `run_webui.bat`，開啟 http://127.0.0.1:7860 。影片推論在本機執行，不使用雲端 API。
 
+## ComfyUI 版本
+
+本面板在 **ComfyUI v0.36.0** 上實測通過（FL2VA／Ref2VA／長片三條路徑皆正常）。升級到 v0.36.0 時，除了 `requirements.txt` 顯眼處列的套件，還要一併升級 **`comfy-aimdo` 到 0.5.3**（`pip install "comfy-aimdo==0.5.3"`）——它是 v0.36.0 新記憶體圖編譯器的原生相依，若停在 0.5.2，每次生成會在收尾階段丟 `'MallocGraph' object has no attribute 'rogue_count'` 而失敗。連同要對齊的還有 `comfyui-frontend-package==1.52.7`、`comfyui-workflow-templates==0.11.62`、`comfy-kitchen==0.2.34`。升級後重啟後端才會生效。
+
 ## H3 快速生成
 
 - 模型庫：本 Portable 目錄的 `ComfyUI/models`，不依賴固定磁碟代號。FL2VA 與 Ref2VA 使用 Pruned Q4_K_M GGUF；文字編碼器預設 Heretic 無審查 NVFP4（可切回原版 AWQ），VAE 與 LoRA 使用既有檔案。原 INT8 權重仍保留。
@@ -30,6 +34,12 @@
   - `模型內建蒸餾・8 步`：DaSiWa Turbo 這類已蒸餾的權重用，**不套 Turbo LoRA**、CFG 1。兩種蒸餾不可疊加。
   - `非蒸餾・20 步`：CFG 2.5，DaSiWa 非蒸餾版與原始權重用。
 - 額外 LoRA 以 `LoraLoaderModelOnly` 疊在 Turbo LoRA 之後（節點 9），強度 -2～2。FL2VA 與 Ref2VA 是不同模型，LoRA 要選對應版本。新放入的檔案若後端找不到，執行 `restart_webui.bat`。
+
+## INT8 視訊 VAE（省顯存）
+
+- `minimax_h3_video_vae_int8_convrot.safetensors`（2,811,065,184 bytes）放進 `ComfyUI/models/vae`，面板會**自動優先使用**它取代原版 FP16（5.2 GB）；檔案不存在時自動退回 FP16。
+- 來源：`Comfy-Org/MiniMax-H3`（版本 `7e75982b97cd5a41d2dcfa1904ee88d0686d6fd1`），SHA-256 `52a2c8c7…c8e60c0e`。`download_int8_vae.py` 可續傳並核對。
+- Kijai 實測（RTX 5070 12GB、15 秒片）：VAE 顯存從 4,965 MB 降到 2,677 MB（約 −46%），並略快。24GB 卡不缺這點，但長片／高解析度時多出的餘裕仍有幫助。音訊 VAE 不變。
 
 ## Ref2VA 萬用參考
 

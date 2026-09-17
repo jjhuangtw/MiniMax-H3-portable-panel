@@ -51,6 +51,8 @@ H3_FL2VA_MODEL = "minimax_h3_fl2va_pruned-Q4_K_M.gguf"
 H3_REF2VA_MODEL = "minimax_h3_ref2va_pruned-Q4_K_M.gguf"
 H3_TEXT_ENCODER = "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
 H3_VIDEO_VAE = "minimax_h3_video_vae_fp16.safetensors"
+# Kijai/Comfy-Org INT8 ConvRot video VAE: ~half the VRAM, near-identical quality. Used automatically when present.
+H3_VIDEO_VAE_INT8 = "minimax_h3_video_vae_int8_convrot.safetensors"
 H3_AUDIO_VAE = "minimax_h3_audio_vae_fp32.safetensors"
 H3_FL2VA_LORA = "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
 H3_REF2VA_LORA = "minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors"
@@ -197,6 +199,13 @@ def model_dirs(kind):
         pass
     return dirs
 
+def video_vae():
+    """Prefer the INT8 ConvRot video VAE when it is present, else the FP16 one."""
+    for folder in model_dirs("vae"):
+        if os.path.exists(os.path.join(folder, H3_VIDEO_VAE_INT8)):
+            return H3_VIDEO_VAE_INT8
+    return H3_VIDEO_VAE
+
 def backend_choices(node_type, input_name):
     response = requests.get(f"{COMFY_URL}/object_info/{node_type}", timeout=5)
     response.raise_for_status()
@@ -205,18 +214,24 @@ def backend_choices(node_type, input_name):
         return spec[0]
     return spec[1].get("options", [])
 
+MODEL_EXTS = (".safetensors", ".gguf", ".pth", ".ckpt", ".pt")
+
 def list_model_files(kind, node_type, input_name):
-    """Prefer the backend's own list; fall back to scanning the model folders."""
+    """Union of the backend's list and a folder scan, so a not-yet-indexed backend never hides a file."""
+    found = set()
     try:
-        return backend_choices(node_type, input_name)
+        # Backend uses OS separators (backslash on Windows); normalize so it dedups with the folder scan.
+        found.update(f.replace("\\", "/") for f in backend_choices(node_type, input_name))
     except Exception:
-        found = []
-        for root in model_dirs(kind):
-            for dirpath, _, filenames in os.walk(root):
-                for filename in filenames:
-                    if filename.endswith(".safetensors"):
-                        found.append(os.path.relpath(os.path.join(dirpath, filename), root))
-        return sorted(set(found))
+        pass
+    for root in model_dirs(kind):
+        if not os.path.isdir(root):
+            continue
+        for dirpath, _, filenames in os.walk(root):
+            for filename in filenames:
+                if filename.endswith(MODEL_EXTS):
+                    found.add(os.path.relpath(os.path.join(dirpath, filename), root).replace("\\", "/"))
+    return sorted(found)
 
 def default_text_encoder(choices=None):
     values = [value for _, value in (choices if choices is not None else text_encoder_choices())]
@@ -373,7 +388,7 @@ def build_minimax_h3_prompt(
         "3": {
             "class_type": "VAELoader",
             "inputs": {
-                "vae_name": H3_VIDEO_VAE
+                "vae_name": video_vae()
             }
         },
         "4": {
@@ -530,7 +545,7 @@ def build_minimax_h3_ref_prompt(
     workflow = {
         "1": model_loader(ref2va_model),
         "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": text_encoder, "type": "minimax"}},
-        "3": {"class_type": "VAELoader", "inputs": {"vae_name": H3_VIDEO_VAE}},
+        "3": {"class_type": "VAELoader", "inputs": {"vae_name": video_vae()}},
         "4": {"class_type": "VAELoader", "inputs": {"vae_name": H3_AUDIO_VAE}},
     }
     turbo_lora, steps, cfg = mode_settings(turbo)
@@ -644,7 +659,7 @@ def build_long_video_prompt(
     workflow = {
         "1": model_loader(ref2va_model),
         "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": text_encoder, "type": "minimax"}},
-        "3": {"class_type": "VAELoader", "inputs": {"vae_name": H3_VIDEO_VAE}},
+        "3": {"class_type": "VAELoader", "inputs": {"vae_name": video_vae()}},
         "4": {"class_type": "VAELoader", "inputs": {"vae_name": H3_AUDIO_VAE}},
     }
     turbo_lora, steps, _ = mode_settings(mode)
@@ -1034,13 +1049,15 @@ def execute_seedvr2_upscale(video_file, resolution_label, batch_size, blocks_to_
     vae_model = resolve_backend_file("SeedVR2LoadVAEModel", "model", vae_model, " SeedVR2 VAE")
 
     video_name = upload_image(video_file)
+    # SeedVR2's seed is a 32-bit int (max 4294967295), unlike H3's 64-bit; keep it in range.
     if seed is None or seed == -1:
         import random
-        seed = random.randint(1, 1000000000000000)
+        seed = random.randint(1, 4294967295)
+    seed = int(seed) % 4294967296
     resolution = SEEDVR2_RES_CHOICES.get(resolution_label, 1080)
     progress(0.15, desc=f"正在準備 SeedVR2 圖譜（短邊 {resolution}，每批 {int(batch_size)} 幀）...")
     graph = build_seedvr2_prompt(video_name, dit_model, vae_model, resolution, int(batch_size),
-                                 int(blocks_to_swap), color_correction, int(seed))
+                                 int(blocks_to_swap), color_correction, seed)
     # SeedVR2 reports its own progress; total_steps=0 keeps the bar in the loading state until node 41 finishes.
     output = run_comfy_workflow(graph, 0, progress, "RTX 4090 正在以 SeedVR2 放大影片...", "SeedVR2 放大")
     history.record("SeedVR2 放大", os.path.basename(str(video_file)), output,
@@ -2031,49 +2048,49 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
             render_btn.click(render_storyboard, [shot_table, story_res, story_turbo, *model_inputs], studio_output)
 
         with gr.Tab("📜 紀錄"):
-            gr.Markdown("每次成功生成都會記到 `generation_history.jsonl`。點表格中的一列即可看到完整提示詞與設定，"
-                        "再選要套用到哪個分頁。套用只會填入提示詞，其他參數請自行對照右側設定調整。")
+            gr.Markdown("每次成功生成都會存一張封面縮圖。點縮圖即可看到完整提示詞與該次成品，再選要套用到哪個分頁。")
             with gr.Row():
                 history_refresh = gr.Button("🔄 重新整理", scale=0, min_width=120)
                 history_count = gr.Markdown("")
             history_rows = gr.State([])
-            history_table = gr.Dataframe(headers=history.COLUMNS, datatype=["str"] * len(history.COLUMNS),
-                                         interactive=False, wrap=True, max_height=380)
+            history_gallery = gr.Gallery(label="生成紀錄（最新在前，點縮圖看細節）", columns=6, height=420,
+                                         allow_preview=False, object_fit="cover")
             with gr.Row():
                 with gr.Column(scale=5):
                     history_prompt = gr.Textbox(label="提示詞（可先修改再套用）", lines=10)
                     with gr.Row():
-                        apply_t2v = gr.Button("套用到 🎬 文生影音")
-                        apply_i2v = gr.Button("套用到 🖼️ FL2VA")
-                        apply_ref = gr.Button("套用到 🎥 Ref2VA")
+                        apply_t2v = gr.Button("套用到 🎬 文生")
+                        apply_i2v = gr.Button("套用到 🖼️ 首尾幀")
+                        apply_ref = gr.Button("套用到 🎞️ 參考")
                         apply_long = gr.Button("套用到 📼 長片")
                     history_seed_note = gr.Markdown("")
                 with gr.Column(scale=5):
-                    history_details = gr.Markdown("")
                     history_video = gr.Video(label="這次的成品", interactive=False, height=360)
+                    history_details = gr.Markdown("")
 
             def load_history():
-                rows = history.entries()
-                return rows, history.table(rows), f"共 {len(rows)} 筆（最新在最上面）"
+                # Only rows whose output still exists on disk, so every gallery cell has a real thumbnail.
+                rows = history.rows_with_thumb(history.entries())
+                return rows, history.gallery(rows), f"共 {len(rows)} 筆（最新在最上面）"
 
             def pick_history(rows, event: gr.SelectData):
                 index = event.index[0] if isinstance(event.index, (list, tuple)) else event.index
                 if not rows or index is None or index >= len(rows):
-                    return "", "", None, ""
+                    return "", None, "", ""
                 row = rows[index]
                 output = row.get("output") or ""
                 video = output if output.lower().endswith((".mp4", ".webm", ".mkv")) and os.path.exists(output) else None
                 seed = row.get("seed")
-                note = f"要重現同一支影片，把種子填成 **{seed}**，並照左側設定調整模型與模式。" if seed else ""
-                return row.get("prompt", ""), history.details_text(row), video, note
+                note = f"要重現，種子填 **{seed}**，並照下方設定調整模型與模式。" if seed else ""
+                return row.get("prompt", ""), video, history.details_text(row), note
 
-            history_refresh.click(load_history, None, [history_rows, history_table, history_count], queue=False)
-            history_table.select(pick_history, [history_rows],
-                                 [history_prompt, history_details, history_video, history_seed_note], queue=False)
+            history_refresh.click(load_history, None, [history_rows, history_gallery, history_count], queue=False)
+            history_gallery.select(pick_history, [history_rows],
+                                   [history_prompt, history_video, history_details, history_seed_note], queue=False)
             for button, target in ((apply_t2v, t2v_prompt), (apply_i2v, i2v_prompt),
                                    (apply_ref, ref_prompt), (apply_long, long_prompt)):
                 button.click(lambda text: text, history_prompt, target, queue=False)
-            demo.load(load_history, None, [history_rows, history_table, history_count])
+            demo.load(load_history, None, [history_rows, history_gallery, history_count])
 
         with gr.Tab("ℹ️ 系統"):
             gr.Markdown("""
