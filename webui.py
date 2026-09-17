@@ -19,6 +19,9 @@ import re
 import math
 import tempfile
 from prompt_library import PROMPT_CATEGORIES
+from prompt_reference import OFFICIAL_GUIDE_CATEGORIES
+from prompt_examples import OFFICIAL_FORMAT_EXAMPLES
+from long_examples import LONG_VIDEO_EXAMPLES
 from media_tools import AUTO_RESOLUTION_CHOICES, auto_canvas, has_audio_stream, media_duration, mux_original_audio, prepare_reference_video
 import history
 from prompt_builder import (AUDIO_MODE_COPY, AUDIO_MODE_REFERENCE, add_base_prompt_builder, add_ref_prompt_builder,
@@ -1449,6 +1452,8 @@ T2V_PROMPT_TEMPLATES = {
 
 PROMPT_LIBRARY = {
     **PROMPT_CATEGORIES,
+    "🎯 官方格式範例（可直接生成）": OFFICIAL_FORMAT_EXAMPLES,
+    **OFFICIAL_GUIDE_CATEGORIES,
     "原有精選": {name: prompt for name, prompt in T2V_PROMPT_TEMPLATES.items() if prompt},
 }
 
@@ -1471,12 +1476,15 @@ def change_prompt_category(category):
 
 
 def add_prompt_picker(prompt_box):
-    with gr.Accordion("📚 提示詞範本庫｜建築・人物・成年女性性感動畫・分鏡導演・精選", open=False):
+    with gr.Accordion("📚 提示詞範本庫｜建築・人物・成年女性性感動畫・官方格式範例・分鏡導演・官方寫作指南・精選", open=False):
         with gr.Row():
             category = gr.Dropdown(label="分類", choices=list(PROMPT_LIBRARY), value="建築（20 組）")
             template = gr.Dropdown(label="範本（可輸入關鍵字搜尋）", choices=list(PROMPT_LIBRARY["建築（20 組）"]), value=None)
-        preview = gr.Textbox(label="範本預覽", lines=5, interactive=False)
+        preview = gr.Textbox(label="範本預覽", lines=10, max_lines=24, interactive=False)
         gr.Markdown("先選範本，再套用；切換分類不會改動已寫的提示詞。首尾幀與參考影音請依上傳素材調整人物、場景及動作。\n\n"
+                    "「📖 官方指南」兩類是 MiniMax 官方 h3-prompt-writing skill 的原文（三段格式與 Ref 六段格式），"
+                    "當**參考與範例**用：在預覽框閱讀、選取複製取用；其中 `Case 1～4` 與 Ref 的 `Complete Example` 是完整官方格式範例，可直接「套用」當起手式再改。結構化表單（🧱）已依這份指南設計。\n\n"
+                    "「🎯 官方格式範例（可直接生成）」是依官方格式手寫的 12 組完整 T2VA 提示詞（含 `integrated_multimodal_description` 三欄），**套用後直接就能在「文生影音／FL2VA」分頁生成**，也可當範本改寫。\n\n"
                     "「🎬 分鏡導演」那一類是**給語言模型看的指令**，不是 H3 的提示詞，兩份接著用：\n"
                     "1. 「單圖擴展成 10–20 秒分鏡」：貼給會看圖的語言模型，連同一張參考圖，讓它產出分鏡表與九宮格分鏡圖。\n"
                     "2. 「多圖分鏡 → 連貫多段影片提示詞」：把分鏡圖交回語言模型，讓它逐段寫出鎖定同一人物、同一場景、同一時間軸的提示詞。\n"
@@ -1488,6 +1496,28 @@ def add_prompt_picker(prompt_box):
         template.change(preview_prompt_template, [category, template], [preview], queue=False)
         replace.click(apply_prompt_template, [category, template, prompt_box], [prompt_box], queue=False)
         append.click(lambda c, t, p: apply_prompt_template(c, t, p, append=True), [category, template, prompt_box], [prompt_box], queue=False)
+
+
+def add_long_example_picker(segment_box):
+    """Long-video segment examples (建築/室內/人物) that fill the 分段提示詞 box directly."""
+    cats = list(LONG_VIDEO_EXAMPLES)
+    with gr.Accordion("📚 長片範例庫｜建築・室內・人物（30 秒～2 分鐘，用官方技巧）", open=False):
+        gr.Markdown(
+            "入門學習用：每個範例是多段提示詞，已用單獨一行 `---` 分好段。**選範例 → 套用**，就會填進上面的「分段提示詞」框，"
+            "把「每段秒數」保持在預設 10 秒，段數會決定總長度（3 段≈30 秒、6 段≈60 秒、12 段≈2 分鐘）。\n\n"
+            "這些範例示範官方 h3-prompt-writing 技巧：開頭寫風格與 `[Shot 1]`；運鏡用官方詞彙（Push In／Truck／Arc／Pedestal／Tilt "
+            "＋幅度＋速度）；聲音融進描述；畫面文字用英文雙引號；人物類用 `<Picture 1>` 綁定角色參考圖、台詞用 `(S1)`＋`<d>[English] …</d>`。"
+            "每段開頭都接續上一段的結尾，維持同一場景／同一角色。套用後可自行改寫學習。"
+        )
+        with gr.Row():
+            lcat = gr.Dropdown(label="分類", choices=cats, value=cats[0])
+            lname = gr.Dropdown(label="範例（可輸入關鍵字搜尋）", choices=list(LONG_VIDEO_EXAMPLES[cats[0]]), value=None)
+        lprev = gr.Textbox(label="範例預覽（每段以 --- 分隔）", lines=10, max_lines=24, interactive=False)
+        lapply = gr.Button("套用到「分段提示詞」", variant="secondary")
+        lcat.change(lambda c: (gr.Dropdown(choices=list(LONG_VIDEO_EXAMPLES.get(c, {})), value=None), ""),
+                    [lcat], [lname, lprev], queue=False)
+        lname.change(lambda c, n: LONG_VIDEO_EXAMPLES.get(c, {}).get(n, ""), [lcat, lname], [lprev], queue=False)
+        lapply.click(lambda c, n: LONG_VIDEO_EXAMPLES.get(c, {}).get(n, ""), [lcat, lname], [segment_box], queue=False)
 
 def plan_storyboard(story, seconds_per_shot=4):
     if not story or not story.strip():
@@ -1828,6 +1858,7 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
                         label="分段提示詞（選填）", lines=8,
                         placeholder="第 1 段：……\n---\n第 2 段：接續上一段結尾，……\n---\n第 3 段：……"
                     )
+                    add_long_example_picker(long_segment_prompts)
                     long_ref = gr.Image(label="角色參考圖（選填，提示詞用 <Picture 1>）", type="filepath", height=300)
                     with gr.Row():
                         long_total = gr.Slider(label="總長度（秒）", minimum=10, maximum=120, value=30, step=1)

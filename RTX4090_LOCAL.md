@@ -57,6 +57,7 @@
 - Ref：`subject_definitions` / `summary` / `retention_analysis` / `detailed_description` / `overall_soundscape` / `non_diegetic_music`；保留標記畫面類為 `fully_preserved`、`partially_preserved`、`attribute_transfer`、`weak_reference`，音訊類為 `fully_copy`、`partially_copy`、`reference`、`weak_reference`。
 - 台詞按鈕產生 `說話者 (S1) says: <d>[Chinese] …</d>`，中文可用 zhconv 轉簡體（`python_embeded/lib/site-packages/zhconv`，1.4.3，GPLv2+，SHA-256 `ad42d9057ca0605f8e41d62b67ca797f879f58193ee6840562c51459b2698c45`）。
 - FL2VA 分頁預設在第一行加入官方對齊宣告：只有首幀時用 I2VA 句，首尾幀都有時用 FL2VA 句（尾幀秒數＝幀數／24，鏡頭編號取提示詞中最大的 `[Shot N]`），只有尾幀時用 L2VA 句；提示詞已有宣告時不重複。
+- 「📚 提示詞範本庫」新增兩類「📖 官方指南」：MiniMax 官方 h3-prompt-writing skill 原文（三段格式 9 條、Ref 六段格式 8 條），當參考／範例用；`Case 1～4` 與 Ref 的 `Complete Example` 是完整官方格式範例，可直接套用。原文不隨 repo 散布（`.gitignore` 排除 `prompt_references/*.txt`），由 `download_prompt_guides.py` 自官方 repo（版本 `1ce88e916de7c15b63cbaf347642503f9bc21d3d`）下載並核對 SHA-256；檔案不存在時面板不顯示這兩類，不影響其他功能。
 
 ## Ref2VA NSFW LoRA 與採樣排程
 

@@ -26,25 +26,35 @@ Krea2 image styles / 圖片風格 LoRA：
 
 ## Requirements / 需要準備
 
-1. **NVIDIA GPU**, 24 GB VRAM recommended (RTX 4090). Smaller cards work at lower resolution / length / batch.
-   建議 24 GB VRAM；較小的卡需降低解析度、片長與批次。
-2. **ComfyUI Portable (Windows)** — download `ComfyUI_windows_portable` from the
-   [ComfyUI releases](https://github.com/comfyanonymous/ComfyUI/releases); it unpacks to
-   `python_embeded\` + `ComfyUI\`.
-3. **git** and **~200 GB free disk** (core set is ~35 GB, plus optional models).
+- **NVIDIA GPU**, 24 GB VRAM recommended (RTX 4090). Smaller cards work at lower resolution / length / batch.
+  建議 24 GB VRAM；較小的卡需降低解析度、片長與批次。
+- **Windows 10 (1803+) or 11**, and **~200 GB free disk** (core set ~35 GB, plus any optional models).
+  No git or Python setup needed — the ComfyUI portable brings its own Python, and `install.bat` uses
+  Windows' built-in `curl`/`tar`. 不需要安裝 git 或 Python。
 
-## Install / 安裝
+## Install / 安裝 — three steps / 三步
 
-1. Put this repo's files into the ComfyUI portable root, next to `python_embeded\` and `ComfyUI\`.
-   把本 repo 檔案放進 ComfyUI portable 根目錄，和 `python_embeded\`、`ComfyUI\` 並排。
-2. Double-click **`install.bat`**. It installs the Python packages, clones the required custom nodes
-   (pinned revisions), and downloads the core H3 models (Q4 diffusion, text encoder, video/audio VAE,
-   two Turbo LoRAs) with SHA-256 verification.
-   雙擊 `install.bat`：裝套件、clone custom node（固定版本）、下載核心 H3 模型並核對雜湊。
-3. Double-click **`run_webui.bat`** and open http://127.0.0.1:7860 .
+**1. Get ComfyUI portable.** Download `ComfyUI_windows_portable_nvidia.7z` from the
+   [ComfyUI releases](https://github.com/comfyanonymous/ComfyUI/releases) (use the **latest** — the panel
+   is tested on v0.36.0) and extract it with [7-Zip](https://www.7-zip.org/). You get a folder containing
+   `python_embeded\` and `ComfyUI\`.
+   下載最新版 ComfyUI portable（`.7z`），用 7-Zip 解壓，得到含 `python_embeded\`、`ComfyUI\` 的資料夾。
 
-Optional models — run these yourself if you want them / 可選模型自行執行：
-`download_heretic_encoder.py`, `download_hd_models.py`, `download_seedvr2.py`, `download_krea2_style_loras.py`.
+**2. Add the panel.** On this GitHub page click **Code ▸ Download ZIP**, extract it, and copy everything
+   inside into the ComfyUI portable folder from step 1 — so `install.bat` sits **next to** `python_embeded\`.
+   在本頁按 **Code ▸ Download ZIP**，解壓後把裡面**所有檔案**複製進步驟 1 的資料夾，讓 `install.bat` 和
+   `python_embeded\` 並排。
+
+**3. Double-click `install.bat`.** It sets up the packages, downloads the custom nodes (no git) and the
+   core H3 models with SHA-256 checks, then offers to launch. After that just double-click **`run_webui.bat`**
+   and open http://127.0.0.1:7860 . `install.bat` is resumable — if a download drops, run it again.
+   雙擊 `install.bat`：裝套件、免 git 下載 custom node 與核心模型（核對雜湊），跑完會問要不要開啟面板；
+   之後平常用 `run_webui.bat`。中斷了再跑一次即可續傳。
+
+Optional models — run these `.py` files yourself later if you want them / 之後想要再自行執行：
+`download_heretic_encoder.py` (uncensored encoder, panel default), `download_int8_vae.py` (lower-VRAM
+video VAE), `download_hd_models.py` (HD upscale), `download_seedvr2.py` (video upscaler),
+`download_krea2_style_loras.py` (Krea2 style LoRAs).
 
 Full per-tab notes (Traditional Chinese): [RTX4090_LOCAL.md](RTX4090_LOCAL.md).
 
