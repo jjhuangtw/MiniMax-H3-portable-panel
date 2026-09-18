@@ -1838,6 +1838,10 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
             encoders = text_encoder_choices()
             model_encoder = gr.Dropdown(label="文字編碼器", choices=encoders, value=default_text_encoder(encoders), scale=5)
             model_refresh = gr.Button("🔄 重新掃描", scale=1)
+        gr.Markdown(
+            "- `..._Q4_K_M.gguf`：Q4 量化，最省顯存、最快，內定推薦（搭「Turbo LoRA・4 步」）。\n"
+            "- `..._int8_convrot.safetensors`：INT8，畫質較好但較慢、吃更多顯存。"
+        )
         with gr.Row():
             fl2va_models = diffusion_model_choices("fl2va")
             ref2va_models = diffusion_model_choices("ref2va")
@@ -1845,10 +1849,6 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
                                       value=krea2_default(fl2va_models, H3_FL2VA_MODEL))
             model_ref2va = gr.Dropdown(label="Ref2VA 擴散模型（參考影音／長片）", choices=ref2va_models,
                                        value=krea2_default(ref2va_models, H3_REF2VA_MODEL))
-        gr.Markdown(
-            "- `..._Q4_K_M.gguf`：Q4 量化，最省顯存、最快，內定推薦（搭「Turbo LoRA・4 步」）。\n"
-            "- `..._int8_convrot.safetensors`：INT8，畫質較好但較慢、吃更多顯存。"
-        )
         model_refresh.click(refresh_model_choices, None, [model_encoder, model_fl2va, model_ref2va], queue=False)
     model_inputs = [model_encoder, model_fl2va, model_ref2va]
 
