@@ -249,8 +249,8 @@ def refresh_model_choices():
     fl2va = diffusion_model_choices("fl2va")
     ref2va = diffusion_model_choices("ref2va")
     return (gr.Dropdown(choices=encoders, value=default_text_encoder(encoders)),
-            gr.Dropdown(choices=fl2va, value=krea2_default(fl2va, H3_FL2VA_MODEL)),
-            gr.Dropdown(choices=ref2va, value=krea2_default(ref2va, H3_REF2VA_MODEL)))
+            gr.Dropdown(choices=model_label_choices(fl2va), value=krea2_default(fl2va, H3_FL2VA_MODEL)),
+            gr.Dropdown(choices=model_label_choices(ref2va), value=krea2_default(ref2va, H3_REF2VA_MODEL)))
 
 def resolve_backend_file(node_type, input_name, name, what):
     """Map a chosen file to the backend's spelling (path separators differ on Windows)."""
@@ -780,6 +780,20 @@ def diffusion_model_choices(trunk=None):
     elif trunk == "ref2va":
         files = [f for f in files if "fl2va" not in f.lower() and "fl2v" not in f.lower()]
     return files
+
+def model_label_choices(models):
+    """(display, value) pairs: append a short type hint after each option; value stays the filename."""
+    def hint(name):
+        low = name.lower()
+        if "int8_convrot" in low:
+            return "INT8・畫質較好但較慢、吃顯存"
+        if "q4_k_m" in low or "-q4" in low:
+            return "Q4・最省顯存、最快、推薦"
+        if "dasiwa" in low or "hybrid" in low:
+            return "DaSiwa 混合・內建蒸餾（採樣選 8 步）"
+        return ""
+    return [(f"{m}  —  {hint(m)}" if hint(m) else m, m) for m in models]
+
 
 def model_file_size(model_name):
     for folder in model_dirs("diffusion_models"):
@@ -1838,16 +1852,14 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
             encoders = text_encoder_choices()
             model_encoder = gr.Dropdown(label="文字編碼器", choices=encoders, value=default_text_encoder(encoders), scale=5)
             model_refresh = gr.Button("🔄 重新掃描", scale=1)
-        gr.Markdown(
-            "- `..._Q4_K_M.gguf`：Q4 量化，最省顯存、最快，內定推薦（搭「Turbo LoRA・4 步」）。\n"
-            "- `..._int8_convrot.safetensors`：INT8，畫質較好但較慢、吃更多顯存。"
-        )
         with gr.Row():
             fl2va_models = diffusion_model_choices("fl2va")
             ref2va_models = diffusion_model_choices("ref2va")
-            model_fl2va = gr.Dropdown(label="FL2VA 擴散模型（文生／首尾幀／3D 攝影機／編劇）", choices=fl2va_models,
+            model_fl2va = gr.Dropdown(label="FL2VA 擴散模型（文生／首尾幀／3D 攝影機／編劇）",
+                                      choices=model_label_choices(fl2va_models),
                                       value=krea2_default(fl2va_models, H3_FL2VA_MODEL))
-            model_ref2va = gr.Dropdown(label="Ref2VA 擴散模型（參考影音／長片）", choices=ref2va_models,
+            model_ref2va = gr.Dropdown(label="Ref2VA 擴散模型（參考影音／長片）",
+                                       choices=model_label_choices(ref2va_models),
                                        value=krea2_default(ref2va_models, H3_REF2VA_MODEL))
         model_refresh.click(refresh_model_choices, None, [model_encoder, model_fl2va, model_ref2va], queue=False)
     model_inputs = [model_encoder, model_fl2va, model_ref2va]
