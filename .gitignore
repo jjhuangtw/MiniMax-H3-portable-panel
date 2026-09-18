@@ -17,6 +17,11 @@
 !docs/
 !docs/*.png
 
+# Prompt-template thumbnails (Krea2-rendered previews shown in the prompt library).
+!prompt_thumbs/
+!prompt_thumbs/*.jpg
+!prompt_thumbs/*.png
+
 # Later rules win: keep NSFW / abandoned model downloaders and runtime files out of the repo.
 download_ref2va_loras.py
 download_krea2_models.py

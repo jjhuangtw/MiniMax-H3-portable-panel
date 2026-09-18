@@ -1475,13 +1475,116 @@ def change_prompt_category(category):
     return gr.Dropdown(choices=list(PROMPT_LIBRARY.get(category, {})), value=None), ""
 
 
+PROMPT_THUMB_DIR = os.path.join(BASE_DIR, "prompt_thumbs")
+# Categories that are reference text / LLM instructions, not scene prompts — no thumbnails.
+THUMBNAIL_SKIP_CATEGORIES = ("分鏡導演", "官方指南")
+
+
+def prompt_to_image_desc(text):
+    """Reduce an H3 prompt to a clean visual scene description for a Krea2 thumbnail:
+    keep the imagery, drop field labels, shot tags, timing, camera motion, dialogue and notes."""
+    t = text or ""
+    match = re.search(r"integrated_multimodal_description:(.*?)(?:\n\noverall_soundscape:|\n\nnon_diegetic_music:|$)", t, re.S)
+    if match:
+        t = match.group(1)
+    t = re.split(r"\n\s*---\s*\n", t)[0]  # first segment only for multi-segment prompts
+    t = re.sub(r"How the reference pictures align.*?\.", "", t, flags=re.S)
+    t = re.sub(r"For the target video, at [^.]*referenced\.", "", t, flags=re.S)
+    t = re.sub(r"\[Shot \d+\]", "", t)
+    t = re.sub(r"At \d{1,2}[:：]\d{2}[.．]\d{1,3}[,，]?", "", t)
+    t = re.sub(r"[（(][Ss]\d[\d,]*[)）]\s*(says|replies|sings|shouts|says in an off-screen voiceover)[^:：.]*[:：]?", "", t)
+    t = re.sub(r"<d>\[[^\]]*\]|</d>", "", t)          # keep spoken words, drop the tags
+    t = re.sub(r"The camera[^.]*\.", "", t)            # drop camera-motion sentences (still image)
+    t = re.sub(r"<[^>]+>", "", t)                      # drop <Picture 1> etc.
+    t = re.sub(r"時長[:：][^。.]*[。.]?", "", t)
+    t = re.sub(r"避免[^。]*。?", "", t)
+    t = re.sub(r"\s+", " ", t).strip(" ,，。.")
+    return t or (text or "")[:300]
+
+
+def prompt_thumb_path(category, name):
+    import hashlib
+    key = hashlib.sha1((category + "|" + name).encode("utf-8")).hexdigest()
+    return os.path.join(PROMPT_THUMB_DIR, key + ".jpg")
+
+
+def prompt_gallery_items(category):
+    """(thumbnail-or-placeholder, name) pairs for the category, in template order."""
+    names = list(PROMPT_LIBRARY.get(category, {}))
+    items = []
+    placeholder = os.path.join(PROMPT_THUMB_DIR, "_placeholder.png")
+    for name in names:
+        thumb = prompt_thumb_path(category, name)
+        items.append((thumb if os.path.exists(thumb) else (placeholder if os.path.exists(placeholder) else None), name))
+    return items, names
+
+
+def _ensure_placeholder():
+    path = os.path.join(PROMPT_THUMB_DIR, "_placeholder.png")
+    if os.path.exists(path):
+        return path
+    try:
+        from PIL import Image, ImageDraw
+        os.makedirs(PROMPT_THUMB_DIR, exist_ok=True)
+        img = Image.new("RGB", (512, 512), (38, 40, 46))
+        draw = ImageDraw.Draw(img)
+        draw.text((150, 240), "尚無縮圖", fill=(150, 155, 165))
+        img.save(path)
+    except Exception:
+        return None
+    return path
+
+
+def generate_prompt_thumbnails(category, only_missing=True, progress=gr.Progress()):
+    """Render a fast Krea2 thumbnail (512x512, 8 steps) for each template in the category."""
+    import shutil
+    if any(skip in category for skip in THUMBNAIL_SKIP_CATEGORIES):
+        gr.Info("這個分類是參考文字，不需要縮圖。")
+        return prompt_gallery_items(category)[0]
+    templates = PROMPT_LIBRARY.get(category, {})
+    todo = [(n, t) for n, t in templates.items()
+            if not (only_missing and os.path.exists(prompt_thumb_path(category, n)))]
+    if not todo:
+        gr.Info("這個分類的縮圖都已經有了。")
+        return prompt_gallery_items(category)[0]
+    if not ensure_comfy_server():
+        raise gr.Error("無法啟動或連線至 ComfyUI 後端引擎，請檢查 8188 埠！")
+    models = krea2_model_choices()
+    high = resolve_backend_file("UNETLoader", "unet_name", krea2_default(models, KREA2_HIGH_MODEL), "Krea2 高噪模型")
+    encoders = sorted({v for _, v in text_encoder_choices()} | {f for f in list_model_files("text_encoders", "CLIPLoader", "clip_name") if f.endswith(".safetensors")})
+    clip = resolve_backend_file("CLIPLoader", "clip_name", krea2_default(encoders, KREA2_TEXT_ENCODER), "Krea2 文字編碼器")
+    vae = resolve_backend_file("VAELoader", "vae_name", KREA2_VAE, "Krea2 VAE")
+    turbo = resolve_backend_file("LoraLoaderModelOnly", "lora_name", KREA2_TURBO_LORA, "Turbo LoRA")
+    os.makedirs(PROMPT_THUMB_DIR, exist_ok=True)
+    for index, (name, text) in enumerate(todo, 1):
+        progress((index - 1) / len(todo), desc=f"產生縮圖 {index}/{len(todo)}：{name}")
+        graph = build_krea2_prompt(
+            prompt_text=prompt_to_image_desc(text), width=512, height=512, batch=1, seed=20260918,
+            high_model=high, low_model=high, dual=False, lora_name=turbo,
+            high_lora_strength=0.85, low_lora_strength=0.0, sampler="er_sde", high_sigmas="", low_sigmas="",
+            steps=8, scheduler="simple", cfg=1.0, text_encoder=clip, vae=vae)
+        graph["16"]["inputs"]["filename_prefix"] = "prompt_thumbs/thumb"
+        image = run_comfy_workflow(graph, 8, lambda *a, **k: None, "載入中", "縮圖", output_node="16", multiple=True)[0]
+        shutil.copyfile(image, prompt_thumb_path(category, name))
+    progress(1.0, desc="縮圖產生完成")
+    return prompt_gallery_items(category)[0]
+
+
 def add_prompt_picker(prompt_box):
-    with gr.Accordion("📚 提示詞範本庫｜建築・人物・成年女性性感動畫・官方格式範例・分鏡導演・官方寫作指南・精選", open=False):
+    with gr.Accordion("📚 提示詞範本庫｜建築・人物・官方格式範例・分鏡導演・官方寫作指南・精選", open=False):
+        default_cat = next(iter(PROMPT_LIBRARY))
+        _init_items, _init_names = prompt_gallery_items(default_cat)
         with gr.Row():
-            category = gr.Dropdown(label="分類", choices=list(PROMPT_LIBRARY), value="建築（20 組）")
-            template = gr.Dropdown(label="範本（可輸入關鍵字搜尋）", choices=list(PROMPT_LIBRARY["建築（20 組）"]), value=None)
+            category = gr.Dropdown(label="分類", choices=list(PROMPT_LIBRARY), value=default_cat)
+            template = gr.Dropdown(label="範本（可輸入關鍵字搜尋）", choices=list(PROMPT_LIBRARY[default_cat]), value=None)
+        gallery_names = gr.State(_init_names)
+        thumb_gallery = gr.Gallery(value=_init_items, label="範本縮圖（點一張即選用）", columns=6, height=260,
+                                   allow_preview=False, object_fit="cover")
+        with gr.Row():
+            gen_thumbs = gr.Button("🖼️ 產生此分類縮圖")
+            gen_missing = gr.Checkbox(label="只補缺少的", value=True)
         preview = gr.Textbox(label="範本預覽", lines=10, max_lines=24, interactive=False)
-        gr.Markdown("先選範本，再套用；切換分類不會改動已寫的提示詞。首尾幀與參考影音請依上傳素材調整人物、場景及動作。\n\n"
+        gr.Markdown("點縮圖或用下拉選單選範本，再套用；切換分類不會改動已寫的提示詞。縮圖由 Krea2 快速生成、僅供示意（非 H3 實際成片）。\n\n"
                     "「📖 官方指南」兩類是 MiniMax 官方 h3-prompt-writing skill 的原文（三段格式與 Ref 六段格式），"
                     "當**參考與範例**用：在預覽框閱讀、選取複製取用；其中 `Case 1～4` 與 Ref 的 `Complete Example` 是完整官方格式範例，可直接「套用」當起手式再改。結構化表單（🧱）已依這份指南設計。\n\n"
                     "「🎯 官方格式範例（可直接生成）」是依官方格式手寫的 12 組完整 T2VA 提示詞（含 `integrated_multimodal_description` 三欄），**套用後直接就能在「文生影音／FL2VA」分頁生成**，也可當範本改寫。\n\n"
@@ -1492,8 +1595,20 @@ def add_prompt_picker(prompt_box):
         with gr.Row():
             replace = gr.Button("套用・取代提示詞", variant="secondary")
             append = gr.Button("加到提示詞末尾")
-        category.change(change_prompt_category, [category], [template, preview], queue=False)
+        def on_prompt_category(cat):
+            items, names = prompt_gallery_items(cat)
+            return gr.Dropdown(choices=list(PROMPT_LIBRARY.get(cat, {})), value=None), "", items, names
+
+        def on_gallery_pick(cat, names, event: gr.SelectData):
+            if not names or event.index is None or event.index >= len(names):
+                return gr.update(), gr.update()
+            name = names[event.index]
+            return name, preview_prompt_template(cat, name)
+
+        category.change(on_prompt_category, [category], [template, preview, thumb_gallery, gallery_names], queue=False)
         template.change(preview_prompt_template, [category, template], [preview], queue=False)
+        thumb_gallery.select(on_gallery_pick, [category, gallery_names], [template, preview], queue=False)
+        gen_thumbs.click(generate_prompt_thumbnails, [category, gen_missing], [thumb_gallery])
         replace.click(apply_prompt_template, [category, template, prompt_box], [prompt_box], queue=False)
         append.click(lambda c, t, p: apply_prompt_template(c, t, p, append=True), [category, template, prompt_box], [prompt_box], queue=False)
 
@@ -1501,7 +1616,7 @@ def add_prompt_picker(prompt_box):
 def add_long_example_picker(segment_box):
     """Long-video segment examples (建築/室內/人物) that fill the 分段提示詞 box directly."""
     cats = list(LONG_VIDEO_EXAMPLES)
-    with gr.Accordion("📚 長片範例庫｜建築・室內・人物（30 秒～2 分鐘，用官方技巧）", open=False):
+    with gr.Accordion("📚 分段提示詞範例｜建築・室內・人物（30 秒～2 分鐘，用官方技巧）", open=True):
         gr.Markdown(
             "入門學習用：每個範例是多段提示詞，已用單獨一行 `---` 分好段。**選範例 → 套用**，就會填進上面的「分段提示詞」框，"
             "把「每段秒數」保持在預設 10 秒，段數會決定總長度（3 段≈30 秒、6 段≈60 秒、12 段≈2 分鐘）。\n\n"
@@ -1847,7 +1962,8 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
                 "自動切成約 10 秒一段，後一段直接接續前一段結尾的潛空間（重疊 39 幀後去重），聲音也跨段延續，最後合成一支影片。"
                 "使用 Ref2VA Q4 模型與 Turbo 4 步。\n\n"
                 "- **只填全域提示詞**：每段用同一個描述，依總長度自動分段，適合同一場景持續發展。\n"
-                "- **填分段提示詞**：每段之間用單獨一行 `---` 分隔，段數以此為準（總長度滑桿不作用）。每段開頭要接得上前一段的結尾。\n"
+                "- **填分段提示詞**：每段之間用單獨一行 `---` 分隔，段數以此為準（總長度滑桿不作用）。每段開頭要接得上前一段的結尾。"
+                "下方「📚 分段提示詞範例」有建築／室內／人物的現成分段範例，選一個按「套用」就會填進「分段提示詞」框，可直接生成或改寫學習。\n"
                 "- **角色參考圖**：每段都會帶入，提示詞用 `<Picture 1>` 指定，有助於保持同一角色。"
             )
             with gr.Row():
@@ -1934,6 +2050,7 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
                 with gr.Column(scale=5):
                     krea_prompt = gr.Textbox(label="提示詞 (Prompt)", lines=5,
                                              placeholder="作者建議使用 Danbooru 風格標籤（IL / Pony / SD1.5 那一套寫法）")
+                    add_prompt_picker(krea_prompt)
                     with gr.Row():
                         krea_size = gr.Dropdown(label="尺寸", choices=KREA2_SIZES, value=KREA2_SIZES[1])
                         krea_batch = gr.Slider(label="一次張數", minimum=1, maximum=4, value=1, step=1)

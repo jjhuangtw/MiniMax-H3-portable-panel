@@ -105,8 +105,49 @@ Live-action, cinematic, the light warms as the afternoon turns. The camera holds
 Live-action, cinematic, the two rise to leave together. The camera pulls out with medium amplitude at slow speed, following them toward the café door and the bright street beyond.""",
 }
 
+# --- 房仲帶看 Real-estate agent property tour: one consistent agent (<Picture 1>)
+# presents a property space by space, with Chinese presentation lines. Fictional agent. ---
+_REALTOR = {
+    "房仲帶看・接待中心＋樣品屋（約 30 秒／3 段，用 <Picture 1>）": """[Shot 1] Live-action, cinematic, the real estate agent shown in <Picture 1> stands in the bright lobby of a modern Taipei residential sales center, wearing a navy agent uniform, preserving her appearance and clothing. The camera pushes in with small amplitude at slow speed as she turns to the camera and gestures toward the space. The professional agent (S1) says: <d>[Chinese] 歡迎參觀，這是我們的接待中心。</d>
+---
+Live-action, cinematic, the same agent from <Picture 1> walks to a marble architectural model of the complex and presents it with an open hand. The camera trucks right with small amplitude at slow speed following her. The agent (S1) says: <d>[Chinese] 這是整個社區的規劃，中央有一座景觀中庭。</d>
+---
+Live-action, cinematic, the agent from <Picture 1> leads into a model-unit living room and gestures toward the floor-to-ceiling window. The camera arcs around her with small amplitude at slow speed as daylight fills the room. The agent (S1) says: <d>[Chinese] 客廳採光非常好，整面落地窗面向公園。</d>""",
+
+    "房仲帶看・都會景觀三房（約 60 秒／6 段，用 <Picture 1>）": """[Shot 1] Live-action, cinematic, the real estate agent shown in <Picture 1> stands at the entrance of a modern residential tower at golden hour, wearing a navy uniform, preserving her appearance. The camera pedestals up with small amplitude at slow speed revealing the glass facade behind her. The professional agent (S1) says: <d>[Chinese] 這是今天要帶大家看的都會景觀三房。</d>
+---
+Live-action, cinematic, the same agent from <Picture 1> steps into a bright lobby with a stone reception desk and pendant lights. The camera tracks forward at slow speed following her past the seating. The agent (S1) says: <d>[Chinese] 一樓大廳有二十四小時管理櫃台。</d>
+---
+Live-action, cinematic, the agent from <Picture 1> enters the living room and gestures toward the open space. The camera arcs around her with small amplitude at slow speed as light pours through the window. The agent (S1) says: <d>[Chinese] 客廳挑高三米二，面向公園完全無遮蔽。</d>
+---
+Live-action, cinematic, the agent from <Picture 1> walks into the open-plan kitchen and rests a hand on the island. The camera trucks left with small amplitude at slow speed along the counter. The agent (S1) says: <d>[Chinese] 廚房是開放式設計，中島很適合下廚聚餐。</d>
+---
+Live-action, cinematic, the agent from <Picture 1> shows the main bedroom and gestures toward a walk-in closet. The camera pushes in with small amplitude at slow speed. The agent (S1) says: <d>[Chinese] 主臥有獨立更衣室和衛浴，非常隱私。</d>
+---
+Live-action, cinematic, the agent from <Picture 1> steps onto the balcony overlooking the city skyline at dusk. The camera pulls out with medium amplitude at slow speed to include her and the view. The agent (S1) says: <d>[Chinese] 陽台可以看到整個城市的天際線，歡迎預約賞屋。</d>""",
+
+    "房仲帶看・豪宅公設一日（約 90 秒／9 段，用 <Picture 1>）": """[Shot 1] Live-action, cinematic, the real estate agent shown in <Picture 1> stands in the grand double-height lobby of a luxury residence, wearing a navy uniform, preserving her appearance. The camera pushes in with small amplitude at slow speed as she gestures a welcome. The professional agent (S1) says: <d>[Chinese] 今天帶大家參觀這棟豪宅的完整公設。</d>
+---
+Live-action, cinematic, the same agent from <Picture 1> presents the lobby's marble wall and chandelier. The camera tilts up with small amplitude at slow speed following her gesture. The agent (S1) says: <d>[Chinese] 大廳採用天然石材，燈飾是訂製的。</d>
+---
+Live-action, cinematic, the agent from <Picture 1> walks into the residents' lounge with soft seating and a fireplace. The camera trucks right with small amplitude at slow speed. The agent (S1) says: <d>[Chinese] 這裡是住戶交誼廳，可以接待客人。</d>
+---
+Live-action, cinematic, the agent from <Picture 1> shows the fitness gym with floor-to-ceiling windows. The camera tracks forward at slow speed past the equipment. The agent (S1) says: <d>[Chinese] 健身房設備齊全，採光也很好。</d>
+---
+Live-action, cinematic, the agent from <Picture 1> stands beside an indoor swimming pool, light rippling on the water. The camera arcs around her with small amplitude at slow speed. The agent (S1) says: <d>[Chinese] 恆溫游泳池一年四季都能使用。</d>
+---
+Live-action, cinematic, the agent from <Picture 1> presents a private cinema room with tiered seating. The camera pushes in with small amplitude at slow speed. The agent (S1) says: <d>[Chinese] 這是私人影廳，適合家庭聚會。</d>
+---
+Live-action, cinematic, the agent from <Picture 1> walks through a landscaped rooftop garden at golden hour. The camera trucks left with small amplitude at slow speed as grasses sway. The agent (S1) says: <d>[Chinese] 頂樓花園可以俯瞰整個城市。</d>
+---
+Live-action, cinematic, the agent from <Picture 1> enters a model unit's living room with warm light. The camera arcs around her with small amplitude at slow speed. The agent (S1) says: <d>[Chinese] 室內格局方正，每一房都有對外窗。</d>
+---
+Live-action, cinematic, the agent from <Picture 1> stands by the entrance and gives a warm closing gesture. The camera pulls out with medium amplitude at slow speed revealing the lobby around her. The agent (S1) says: <d>[Chinese] 感謝參觀，歡迎預約專人為您服務。</d>""",
+}
+
 LONG_VIDEO_EXAMPLES = {
     "🏛 建築（長片範例）": _ARCH,
     "🛋 室內（長片範例）": _INTERIOR,
     "🧍 人物（長片範例）": _PEOPLE,
+    "🏠 房仲帶看（長片範例）": _REALTOR,
 }
