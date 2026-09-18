@@ -254,10 +254,11 @@ def lora_choices():
 
 def refresh_model_choices():
     encoders = text_encoder_choices()
-    models = diffusion_model_choices()
+    fl2va = diffusion_model_choices("fl2va")
+    ref2va = diffusion_model_choices("ref2va")
     return (gr.Dropdown(choices=encoders, value=default_text_encoder(encoders)), gr.Dropdown(choices=lora_choices()),
-            gr.Dropdown(choices=models, value=krea2_default(models, H3_FL2VA_MODEL)),
-            gr.Dropdown(choices=models, value=krea2_default(models, H3_REF2VA_MODEL)))
+            gr.Dropdown(choices=fl2va, value=krea2_default(fl2va, H3_FL2VA_MODEL)),
+            gr.Dropdown(choices=ref2va, value=krea2_default(ref2va, H3_REF2VA_MODEL)))
 
 def resolve_backend_file(node_type, input_name, name, what):
     """Map a chosen file to the backend's spelling (path separators differ on Windows)."""
@@ -770,11 +771,23 @@ def execute_long_generation(
     progress(1.0, desc="長片生成完成！")
     return output_video_path
 
-def diffusion_model_choices():
-    """Both loaders' lists: .gguf goes through UnetLoaderGGUF, .safetensors through UNETLoader."""
+def is_krea2_model(name):
+    """Krea2 is an image model (different architecture); keep it out of the H3 video menus."""
+    return "krea2" in (name or "").lower()
+
+
+def diffusion_model_choices(trunk=None):
+    """H3 diffusion models for the FL2VA/Ref2VA menus. .gguf -> UnetLoaderGGUF, .safetensors ->
+    UNETLoader. Krea2 image models are excluded; trunk 'fl2va'/'ref2va' hides the other trunk's
+    dedicated models (models named for neither trunk, e.g. DaSiwa Hybrid, show in both)."""
     gguf = [f for f in list_model_files("diffusion_models", "UnetLoaderGGUF", "unet_name") if f.endswith(".gguf")]
     plain = [f for f in list_model_files("diffusion_models", "UNETLoader", "unet_name") if f.endswith(".safetensors")]
-    return sorted(set(gguf + plain))
+    files = [f for f in sorted(set(gguf + plain)) if not is_krea2_model(f)]
+    if trunk == "fl2va":
+        files = [f for f in files if "ref2va" not in f.lower() and "ref2v" not in f.lower()]
+    elif trunk == "ref2va":
+        files = [f for f in files if "fl2va" not in f.lower() and "fl2v" not in f.lower()]
+    return files
 
 def model_file_size(model_name):
     for folder in model_dirs("diffusion_models"):
@@ -810,7 +823,9 @@ def model_loader(model_name):
     return {"class_type": "UNETLoader", "inputs": {"unet_name": model_name, "weight_dtype": "default"}}
 
 def krea2_model_choices():
-    return [f for f in list_model_files("diffusion_models", "UNETLoader", "unet_name") if f.endswith(".safetensors")]
+    """Only Krea2 image models for the 圖片 tab (keep the H3 video models out)."""
+    return [f for f in list_model_files("diffusion_models", "UNETLoader", "unet_name")
+            if f.endswith(".safetensors") and is_krea2_model(f)]
 
 def krea2_default(choices, preferred):
     return preferred if preferred in choices else (choices[0] if choices else preferred)
@@ -1834,12 +1849,18 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
             model_lora_strength = gr.Slider(label="LoRA 強度", minimum=-2, maximum=2, value=1.0, step=0.05, scale=3)
             model_refresh = gr.Button("🔄 重新掃描", scale=1)
         with gr.Row():
-            diffusion_models = diffusion_model_choices()
-            model_fl2va = gr.Dropdown(label="FL2VA 擴散模型（文生／首尾幀／3D 攝影機／編劇）", choices=diffusion_models,
-                                      value=krea2_default(diffusion_models, H3_FL2VA_MODEL))
-            model_ref2va = gr.Dropdown(label="Ref2VA 擴散模型（參考影音／長片）", choices=diffusion_models,
-                                       value=krea2_default(diffusion_models, H3_REF2VA_MODEL))
+            fl2va_models = diffusion_model_choices("fl2va")
+            ref2va_models = diffusion_model_choices("ref2va")
+            model_fl2va = gr.Dropdown(label="FL2VA 擴散模型（文生／首尾幀／3D 攝影機／編劇）", choices=fl2va_models,
+                                      value=krea2_default(fl2va_models, H3_FL2VA_MODEL))
+            model_ref2va = gr.Dropdown(label="Ref2VA 擴散模型（參考影音／長片）", choices=ref2va_models,
+                                       value=krea2_default(ref2va_models, H3_REF2VA_MODEL))
         gr.Markdown(
+            "- **選哪個擴散模型？** 兩個選單分別對應 FL2VA（文生／首尾幀）與 Ref2VA（參考／長片），各自只列該用途的模型：\n"
+            "  - `..._pruned-Q4_K_M.gguf`：**Q4 量化，最省顯存、最快，內定推薦**（搭「Turbo LoRA・4 步」）。\n"
+            "  - `..._pruned_int8_convrot.safetensors`：**INT8,畫質較好但較慢、吃更多顯存**(24GB 卡才建議)。\n"
+            "  - `DasiwaMinimaxH3_...Turbo...`：DaSiwa 混合模型(NSFW 取向),FL2VA/Ref2VA 皆可,**已內建蒸餾 → 採樣模式選「模型內建蒸餾・8 步」**,別再套 Turbo LoRA。約 21GB、較吃顯存。\n"
+            "  - Krea2 圖片模型(`redcraft_krea2_*`)不會出現在這裡,它在「🎨 圖片」分頁。\n"
             "- **Heretic 無審查編碼器**：用 `download_heretic_encoder.py` 下載。它只移除 Qwen3-VL 聊天時的拒答；H3 用的是提示詞向量，"
             "畫面通常只有細微差異。比較時請固定種子。\n"
             "- **LoRA**：放進 `ComfyUI/models/loras/` 後按「重新掃描」。FL2VA（文生／首尾幀／3D 攝影機／編劇）與 Ref2VA 是不同模型，"
