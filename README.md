@@ -39,7 +39,20 @@ Krea2 image styles / 圖片風格 LoRA：
   No git or Python setup needed — the ComfyUI portable brings its own Python, and `install.bat` uses
   Windows' built-in `curl`/`tar`. 不需要安裝 git 或 Python。
 
-## Install / 安裝 — three steps / 三步
+## Install / 安裝 — one click / 一鍵
+
+**Easiest:** download **[`setup.bat`](../../raw/main/setup.bat)** (right-click ▸ Save link as…), put it in an
+**empty folder** on a drive with ~200 GB free, and **double-click it**. It downloads ComfyUI portable
+(pinned v0.36.0), the panel and the core H3 models, then launches the WebUI — no git, no 7-Zip needed.
+It's resumable: if a download drops, run it again. Windows SmartScreen may warn about an unrecognized
+app — click **More info ▸ Run anyway** (it's an unsigned `.bat` that only downloads the files below).
+最省事：下載 `setup.bat`，放進一顆空資料夾（磁碟需 ~200 GB），**雙擊**它，全程自動（免 git、免 7-Zip）。
+SmartScreen 若跳警告，按「更多資訊 ▸ 仍要執行」。
+
+Prefer to do it by hand, or already have ComfyUI portable? Use the three manual steps below.
+想手動、或已經有 ComfyUI portable，就用下面三步。
+
+## Install / 安裝 — three steps (manual) / 三步（手動）
 
 **1. Get ComfyUI portable.** Download `ComfyUI_windows_portable_nvidia.7z` from the
    [ComfyUI releases](https://github.com/comfyanonymous/ComfyUI/releases) (use the **latest** — the panel
