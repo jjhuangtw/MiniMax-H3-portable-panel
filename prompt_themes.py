@@ -175,9 +175,120 @@ INTERIOR_LANDSCAPE = {
         "A wide airy reverberation, the faint sound of a distant door and soft footsteps echoing through the atrium."),
 }
 
+# --- 交通載具 Transport: vehicles in motion, engine/wind sound, dynamic camera ---
+TRANSPORT = {
+    "跑車過彎・山道": _p(
+        "[Shot 1] Live-action, cinematic, a low sports car carves through a mountain-road hairpin at golden hour, tires gripping as the body leans into the turn. The camera trucks right with medium amplitude at fast speed tracking alongside the car through the bend.",
+        "A deep engine growl rising through the corner, the squeal of tires on tarmac, and a rushing wind.",
+        "A driving synth-rock pulse at a fast tempo with a low steady bassline."),
+    "重機奔馳・海岸公路": _p(
+        "[Shot 1] Live-action, cinematic, a rider on a heavy motorcycle speeds along an open coastal highway, the sea glittering beyond the guardrail. The camera tracks from the side at fast speed keeping the bike centered as the landscape blurs past.",
+        "The roar of the engine, wind buffeting past, and the faint crash of waves below.",
+        "An upbeat rock groove at a fast tempo with a punchy drum beat."),
+    "高鐵進站": _p(
+        "[Shot 1] Live-action, cinematic, a sleek high-speed train glides into a modern station platform, its nose reflecting the overhead lights as it slows. The camera pans right with medium amplitude at fast speed following the train to a stop.",
+        "The rising then easing hum of the train, the hiss of brakes, and a soft platform announcement chime.",
+        "A clean electronic pulse at a moderate tempo, bright and even."),
+    "帆船出海": _p(
+        "[Shot 1] Live-action, cinematic, a white sailboat leans into the wind on open blue water, its sail full and taut as spray lifts from the bow. The camera arcs around the boat with medium amplitude at slow speed showing the sail against the sky.",
+        "Wind filling the sail, water rushing along the hull, and the creak of rigging.",
+        "A bright acoustic-guitar theme at a moderate tempo, open and airy."),
+    "熱氣球升空": _p(
+        "[Shot 1] Live-action, cinematic, a colorful hot-air balloon rises slowly over a misty valley at dawn, the burner flaring intermittently. The camera pedestals up with large amplitude at slow speed following the balloon into the golden light.",
+        "The roar of the burner in bursts, a light high-altitude wind, and distant birdsong below.",
+        "A gentle uplifting orchestral swell at a slow tempo with warm strings."),
+    "直升機空拍城市": _p(
+        "[Shot 1] Live-action, cinematic, an aerial view banks slowly over a dense city skyline at dusk, towers glowing with window light. The camera arcs with medium amplitude at slow speed sweeping across the skyline from a helicopter's vantage.",
+        "The steady thud of rotor blades and the muffled hum of the city far below.",
+        "A cinematic ambient pad at a slow tempo with a low sustained pulse."),
+    "老爺車・雨夜街頭": _p(
+        "[Shot 1] Live-action, cinematic, a polished vintage car idles on a rain-slick city street at night, neon reflections rippling on its curved fenders. The camera trucks left with small amplitude at slow speed along the wet bodywork as rain streaks the chrome.",
+        "The low burble of the idling engine, steady rain on the roof, and distant traffic.",
+        "A mellow jazz saxophone at a slow tempo over soft brushed drums."),
+    "貨櫃船・港口": _p(
+        "[Shot 1] Live-action, cinematic, a massive container ship berths at an industrial port at blue hour, cranes lowering toward stacked containers. The camera pulls out with medium amplitude at slow speed revealing the scale of the ship and terminal.",
+        "The deep horn of the ship, the mechanical groan of cranes, and lapping harbor water.",
+        "A low industrial ambient drone at a slow tempo, steady and even."),
+}
+
+# --- 運動健身 Sports: athletic motion, effort sounds, energetic pacing ---
+SPORTS = {
+    "短跑衝刺・跑道": _p(
+        "[Shot 1] Live-action, cinematic, a sprinter explodes out of the blocks down a red running track, muscles driving hard. The camera tracks from the side at fast speed keeping pace as the athlete accelerates.",
+        "Spikes striking the track, powerful rhythmic breathing, and a distant crowd murmur.",
+        "A high-energy electronic beat at a fast tempo with a driving pulse."),
+    "籃球灌籃": _p(
+        "[Shot 1] Live-action, cinematic, a player rises toward the hoop on an indoor court and slams a dunk, the net snapping. The camera tilts up with medium amplitude at fast speed following the leap to the rim.",
+        "The squeak of shoes, the bounce of the ball, the clang of the rim and the snap of the net, over a crowd roar.",
+        "An aggressive hip-hop beat at a fast tempo with a heavy kick."),
+    "游泳・自由式": _p(
+        "[Shot 1] Live-action, cinematic, a swimmer powers through freestyle laps in a clear blue pool, arms cutting the water in rhythm. The camera trucks left with small amplitude at fast speed tracking alongside the stroke.",
+        "Rhythmic splashes, the swimmer's breathing at each turn of the head, and the churn of water.",
+        "A pulsing electronic groove at a moderate tempo, steady and even."),
+    "拳擊訓練": _p(
+        "[Shot 1] Live-action, cinematic, a boxer throws fast combinations at a heavy bag in a dim gym, sweat catching the light. The camera pushes in with small amplitude at fast speed toward the impacts.",
+        "Sharp thuds against the bag, quick exhales with each punch, and the rattle of the chain.",
+        "A tense percussive rhythm at a fast tempo with a low driving bass."),
+    "攀岩": _p(
+        "[Shot 1] Live-action, cinematic, a climber reaches for a high hold on a sunlit rock face, chalk dust drifting from the hands. The camera pedestals up with medium amplitude at slow speed following the climber's controlled move.",
+        "Fingers gripping rough rock, controlled breathing, and a light wind across the cliff.",
+        "A building cinematic score at a slow tempo with rising strings."),
+    "瑜伽・晨光": _p(
+        "[Shot 1] Live-action, cinematic, a person flows slowly through a yoga sequence on a wooden deck at sunrise, breath steady and movements smooth. The camera arcs with small amplitude at slow speed around the pose.",
+        "Slow deep breathing, the faint creak of the deck, and gentle morning birdsong.",
+        "A calm ambient pad at a slow tempo, soft and sustained."),
+    "足球射門": _p(
+        "[Shot 1] Live-action, cinematic, a footballer strikes the ball toward the goal on a green pitch, the net rippling as it hits. The camera tracks with medium amplitude at fast speed following the ball into the goal.",
+        "The solid thud of the kick, the ball hitting the net, and a rising crowd cheer.",
+        "An anthemic electronic build at a fast tempo with a big drum hit."),
+    "衝浪": _p(
+        "[Shot 1] Live-action, cinematic, a surfer carves along the face of a breaking wave, spray fanning off the board. The camera trucks right with medium amplitude at fast speed following the ride across the wave.",
+        "The rush and crash of the wave, water spraying off the board, and a steady ocean wind.",
+        "A bright surf-rock riff at a fast tempo with reverb-heavy guitar."),
+}
+
+# --- 科幻奇幻 Sci-fi & fantasy: imaginative scenes, mostly 3D CG animation ---
+SCIFI_FANTASY = {
+    "太空站・地球視角": _p(
+        "[Shot 1] Cinematic 3D CG animation, a vast space station drifts in orbit with the blue curve of Earth glowing behind it, solar panels catching the sun. The camera arcs with medium amplitude at slow speed around the station's modules.",
+        "A low mechanical hum of the station and the faint hiss of thrusters in the silence of space.",
+        "A sweeping ambient orchestral pad at a slow tempo, vast and sustained."),
+    "賽博龐克街道": _p(
+        "[Shot 1] Cinematic 3D CG animation, a rain-soaked cyberpunk street glows with towering neon signs and holograms, figures moving under umbrellas. The camera tracks forward at slow speed down the crowded, reflective avenue.",
+        "Steady rain, the electric buzz of neon, distant crowd chatter and passing hover traffic.",
+        "A dark synthwave pulse at a moderate tempo with a low arpeggiated bass."),
+    "巨龍飛越山谷": _p(
+        "[Shot 1] Cinematic 3D CG fantasy animation, a great dragon sweeps low over a misty mountain valley, wings beating as it banks between the peaks. The camera arcs with large amplitude at slow speed following the dragon's flight.",
+        "The heavy whoosh of enormous wings, a low resonant growl, and wind rushing through the valley.",
+        "An epic orchestral theme at a moderate tempo with powerful brass and drums."),
+    "魔法師施法": _p(
+        "[Shot 1] Cinematic 3D CG fantasy animation, a robed mage raises a hand as glowing runes spiral into a sphere of light in a dark stone chamber. The camera pushes in with small amplitude at slow speed toward the gathering energy.",
+        "A rising magical hum, faint crackling energy, and the soft rush of swirling air.",
+        "A mystical orchestral build at a slow tempo with shimmering high strings."),
+    "機甲登場": _p(
+        "[Shot 1] Cinematic 3D CG animation, a towering mecha powers up in a hangar, floodlights sweeping across its armored plating as joints lock into place. The camera tilts up with medium amplitude at slow speed revealing the full machine.",
+        "Heavy hydraulic hisses, deep metallic clanks, and a rising power-core hum.",
+        "A heavy industrial score at a moderate tempo with pounding drums and low brass."),
+    "精靈森林・發光": _p(
+        "[Shot 1] Cinematic 3D CG fantasy animation, a glowing enchanted forest at night, luminescent plants and drifting spores lighting a mossy path. The camera tracks forward at slow speed weaving between the softly glowing trees.",
+        "A gentle night ambience with soft chimes, faint insect song, and a light breeze through leaves.",
+        "An ethereal ambient theme at a slow tempo with a soft harp and airy pads."),
+    "星艦躍遷": _p(
+        "[Shot 1] Cinematic 3D CG animation, a sleek starship accelerates against a field of stars, its engines flaring blue before it streaks into faster-than-light travel. The camera pushes in with medium amplitude at fast speed as the stars stretch into lines.",
+        "A deep rising engine surge building to a sharp warp burst, in the silence of space.",
+        "A soaring electronic-orchestral hybrid at a moderate tempo with a big rising swell."),
+    "浮空城市": _p(
+        "[Shot 1] Cinematic 3D CG fantasy animation, a majestic floating city drifts among sunlit clouds, waterfalls spilling off its edges into the sky. The camera pulls out with large amplitude at slow speed revealing the full city aloft.",
+        "A light high-altitude wind, distant falling water, and a faint airy ambience.",
+        "A grand orchestral theme at a slow tempo with warm strings and a soft choir."),
+}
+
 THEME_CATEGORIES = {
     "美食料理（8 組）": FOOD,
     "動物寵物（8 組）": ANIMALS,
     "自然風景（8 組）": NATURE,
     "產品・廣告（8 組）": PRODUCT,
+    "交通載具（8 組）": TRANSPORT,
+    "運動健身（8 組）": SPORTS,
+    "科幻奇幻（8 組）": SCIFI_FANTASY,
 }

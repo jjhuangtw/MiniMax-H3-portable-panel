@@ -8,6 +8,13 @@ generation on a single RTX 4090 (24 GB). ComfyUI backend, fully local inference,
 Tabs / 分頁：Text-to-Video · FL2VA keyframes · Ref2VA reference · segmented long video ·
 SeedVR2 video upscale · Krea2 image generation · 3D camera · storyboard · history.
 
+**Prompt library / 提示詞範本庫**: every generation tab has a browsable library of ready-to-use
+prompts with **Krea2-rendered thumbnails** — architecture, people, food, animals, nature, product,
+transport, sports, sci-fi, plus MiniMax's official prompt-writing guides. The 建築/人物/animation
+templates are written in H3's **official three-field spec** (`integrated_multimodal_description` /
+`overall_soundscape` / `non_diegetic_music`). The long-video tab has multi-segment (30 s–2 min)
+examples. 每個生成分頁都有帶**縮圖**的提示詞範本庫，範本依 MiniMax 官方三段格式撰寫。
+
 > This repo contains **only the panel code and download scripts**. Model weights are not included;
 > the install scripts fetch them from the official sources and verify every SHA-256.
 > 本 repo 只包含面板**程式碼與下載腳本**，不含模型權重；安裝時由腳本自官方來源下載並核對 SHA-256。
