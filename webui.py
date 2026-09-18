@@ -244,24 +244,11 @@ def text_encoder_choices():
     files = [f for f in list_model_files("text_encoders", "CLIPLoader", "clip_name") if f.endswith(".safetensors")]
     return [(TEXT_ENCODER_LABELS.get(os.path.basename(f), f), f) for f in files]
 
-def lora_choices(trunk=None):
-    # H3 video LoRAs only: skip the Turbo LoRAs (auto-applied) and Krea2 image LoRAs.
-    # trunk 'fl2va'/'ref2va' hides the other trunk's LoRAs (unmarked LoRAs show in both).
-    turbo = {H3_FL2VA_LORA, H3_REF2VA_LORA, KREA2_TURBO_LORA}
-    files = [f for f in list_model_files("loras", "LoraLoaderModelOnly", "lora_name")
-             if os.path.basename(f) not in turbo and not f.replace("\\", "/").startswith("krea2/")]
-    if trunk == "fl2va":
-        files = [f for f in files if "ref2v" not in f.lower()]
-    elif trunk == "ref2va":
-        files = [f for f in files if "fl2v" not in f.lower()]
-    return [NO_LORA] + files
-
 def refresh_model_choices():
     encoders = text_encoder_choices()
     fl2va = diffusion_model_choices("fl2va")
     ref2va = diffusion_model_choices("ref2va")
     return (gr.Dropdown(choices=encoders, value=default_text_encoder(encoders)),
-            gr.Dropdown(choices=lora_choices("fl2va")), gr.Dropdown(choices=lora_choices("ref2va")),
             gr.Dropdown(choices=fl2va, value=krea2_default(fl2va, H3_FL2VA_MODEL)),
             gr.Dropdown(choices=ref2va, value=krea2_default(ref2va, H3_REF2VA_MODEL)))
 
@@ -1846,15 +1833,11 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
     free_btn.click(free_vram, None, gpu_status, queue=False)
     status_btn.click(gpu_status_text, None, gpu_status, queue=False)
 
-    with gr.Accordion("🧩 模型設定（編碼器・LoRA・擴散模型，共用）", open=False):
+    with gr.Accordion("🧩 模型設定（文字編碼器・擴散模型，共用）", open=False):
         with gr.Row():
             encoders = text_encoder_choices()
-            model_encoder = gr.Dropdown(label="文字編碼器", choices=encoders, value=default_text_encoder(encoders), scale=4)
-            model_lora_strength = gr.Slider(label="額外 LoRA 強度（兩者共用）", minimum=-2, maximum=2, value=1.0, step=0.05, scale=3)
+            model_encoder = gr.Dropdown(label="文字編碼器", choices=encoders, value=default_text_encoder(encoders), scale=5)
             model_refresh = gr.Button("🔄 重新掃描", scale=1)
-        with gr.Row():
-            model_lora_fl2va = gr.Dropdown(label="FL2VA 額外 LoRA（文生／首尾幀／攝影機／編劇）", choices=lora_choices("fl2va"), value=NO_LORA)
-            model_lora_ref2va = gr.Dropdown(label="Ref2VA 額外 LoRA（參考／對嘴／長片）", choices=lora_choices("ref2va"), value=NO_LORA)
         with gr.Row():
             fl2va_models = diffusion_model_choices("fl2va")
             ref2va_models = diffusion_model_choices("ref2va")
@@ -1863,20 +1846,14 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
             model_ref2va = gr.Dropdown(label="Ref2VA 擴散模型（參考影音／長片）", choices=ref2va_models,
                                        value=krea2_default(ref2va_models, H3_REF2VA_MODEL))
         gr.Markdown(
-            "- **選哪個擴散模型？** 兩個選單分別對應 FL2VA（文生／首尾幀）與 Ref2VA（參考／長片），各自只列該用途的模型：\n"
-            "  - `..._pruned-Q4_K_M.gguf`：**Q4 量化，最省顯存、最快，內定推薦**（搭「Turbo LoRA・4 步」）。\n"
-            "  - `..._pruned_int8_convrot.safetensors`：**INT8,畫質較好但較慢、吃更多顯存**(24GB 卡才建議)。\n"
-            "  - `DasiwaMinimaxH3_...Turbo...`：DaSiwa 混合模型(NSFW 取向),FL2VA/Ref2VA 皆可,**已內建蒸餾 → 採樣模式選「模型內建蒸餾・8 步」**,別再套 Turbo LoRA。約 21GB、較吃顯存。\n"
-            "  - Krea2 圖片模型(`redcraft_krea2_*`)不會出現在這裡,它在「🎨 圖片」分頁。\n"
-            "- **Heretic 無審查編碼器**：用 `download_heretic_encoder.py` 下載。它只移除 Qwen3-VL 聊天時的拒答；H3 用的是提示詞向量，"
-            "畫面通常只有細微差異。比較時請固定種子。\n"
-            "- **LoRA**：放進 `ComfyUI/models/loras/` 後按「重新掃描」。FL2VA（文生／首尾幀／3D 攝影機／編劇）與 Ref2VA 是不同模型，"
-            "LoRA 需與分頁所用模型相符。新檔案若後端找不到，執行 `restart_webui.bat`。\n"
-            "- 請只用虛構角色或取得本人同意的素材；不要以真人照片製作性感或裸露內容。"
+            "兩個選單分別對應 FL2VA（文生／首尾幀）與 Ref2VA（參考／長片），各自只列該用途的模型：\n"
+            "- `..._Q4_K_M.gguf`：Q4 量化，最省顯存、最快，**內定推薦**（搭「Turbo LoRA・4 步」）。\n"
+            "- `..._int8_convrot.safetensors`：INT8，畫質較好但較慢、吃更多顯存。\n"
+            "- `DasiwaMinimaxH3_...Turbo...`：DaSiwa 混合（NSFW），**已內建蒸餾 → 採樣模式選「模型內建蒸餾・8 步」**，約 21GB。\n"
+            "- Krea2 圖片模型在「🎨 圖片」分頁，不會出現在這裡。"
         )
-        model_refresh.click(refresh_model_choices, None,
-                            [model_encoder, model_lora_fl2va, model_lora_ref2va, model_fl2va, model_ref2va], queue=False)
-    model_inputs = [model_encoder, model_lora_fl2va, model_lora_ref2va, model_lora_strength, model_fl2va, model_ref2va]
+        model_refresh.click(refresh_model_choices, None, [model_encoder, model_fl2va, model_ref2va], queue=False)
+    model_inputs = [model_encoder, model_fl2va, model_ref2va]
 
     with gr.Tabs():
         with gr.Tab("🎬 文生"):
@@ -1909,7 +1886,7 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
                     t2v_output = gr.Video(label="生成影音預覽 (帶原生立體聲音效)", interactive=False, height=520)
 
             t2v_btn.click(
-                fn=lambda p, r, d, tb, s, hd, enc, lfl, lref, ls, fl2, r2v: execute_generation(p, r, d, tb, s, text_encoder=enc, lora_name=lfl, lora_strength=ls, fl2va_model=fl2, ref2va_model=r2v, hd=hd),
+                fn=lambda p, r, d, tb, s, hd, enc, fl2, r2v: execute_generation(p, r, d, tb, s, text_encoder=enc, fl2va_model=fl2, ref2va_model=r2v, hd=hd),
                 inputs=[t2v_prompt, t2v_res, t2v_duration, t2v_turbo, t2v_seed, t2v_hd, *model_inputs],
                 outputs=[t2v_output]
             )
@@ -1945,7 +1922,7 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
                     i2v_output = gr.Video(label="生成影音預覽", interactive=False, height=520)
 
             i2v_btn.click(
-                fn=lambda p, r, d, tb, s, f, l, hd, ki, enc, lfl, lref, ls, fl2, r2v: execute_generation(p, r, d, tb, s, f, l, text_encoder=enc, lora_name=lfl, lora_strength=ls, fl2va_model=fl2, ref2va_model=r2v, hd=hd, keyframe_instruction=ki),
+                fn=lambda p, r, d, tb, s, f, l, hd, ki, enc, fl2, r2v: execute_generation(p, r, d, tb, s, f, l, text_encoder=enc, fl2va_model=fl2, ref2va_model=r2v, hd=hd, keyframe_instruction=ki),
                 inputs=[i2v_prompt, i2v_res, i2v_duration, i2v_turbo, i2v_seed, i2v_first, i2v_last, i2v_hd, i2v_instruction, *model_inputs],
                 outputs=[i2v_output]
             )
@@ -2007,8 +1984,8 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
             for control in (ref_images, ref_videos, ref_video_audio, ref_audios):
                 control.change(preview_reference_labels, [ref_images, ref_videos, ref_video_audio, ref_audios], [ref_label_md, ref_labels], queue=False)
             ref_btn.click(
-                fn=lambda p, r, d, tb, s, imgs, vids, va, auds, mode, sch, enc, lfl, lref, ls, fl2, r2v: execute_ref_generation(
-                    p, r, d, tb, s, imgs, vids, va, auds, mode, scheduler=sch, text_encoder=enc, lora_name=lref, lora_strength=ls, fl2va_model=fl2, ref2va_model=r2v),
+                fn=lambda p, r, d, tb, s, imgs, vids, va, auds, mode, sch, enc, fl2, r2v: execute_ref_generation(
+                    p, r, d, tb, s, imgs, vids, va, auds, mode, scheduler=sch, text_encoder=enc, fl2va_model=fl2, ref2va_model=r2v),
                 inputs=[ref_prompt, ref_res, ref_duration, ref_turbo, ref_seed, ref_images, ref_videos, ref_video_audio, ref_audios, ref_audio_mode, ref_scheduler, *model_inputs],
                 outputs=[ref_output]
             )
@@ -2043,8 +2020,8 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
                 with gr.Column(scale=5):
                     lip_output = gr.Video(label="對嘴影片（含原始語音）", interactive=False, height=520)
             lip_btn.click(
-                fn=lambda img, aud, p, r, md, s, enc, lfl, lref, ls, fl2, r2v: execute_lipsync(
-                    img, aud, p, r, md, s, text_encoder=enc, lora_name=lref, lora_strength=ls, fl2va_model=fl2, ref2va_model=r2v),
+                fn=lambda img, aud, p, r, md, s, enc, fl2, r2v: execute_lipsync(
+                    img, aud, p, r, md, s, text_encoder=enc, fl2va_model=fl2, ref2va_model=r2v),
                 inputs=[lip_image, lip_audio, lip_prompt, lip_res, lip_mode, lip_seed, *model_inputs],
                 outputs=[lip_output]
             )
@@ -2088,7 +2065,7 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
             for control in (long_total, long_segment, long_segment_prompts):
                 control.change(preview_long_plan, [long_total, long_segment, long_segment_prompts], long_plan, queue=False)
             long_btn.click(
-                fn=lambda p, sp, tot, seg, r, s, img, sch, md, enc, lfl, lref, ls, fl2, r2v: execute_long_generation(p, sp, tot, seg, r, s, img, mode=md, scheduler=sch, text_encoder=enc, lora_name=lref, lora_strength=ls, fl2va_model=fl2, ref2va_model=r2v),
+                fn=lambda p, sp, tot, seg, r, s, img, sch, md, enc, fl2, r2v: execute_long_generation(p, sp, tot, seg, r, s, img, mode=md, scheduler=sch, text_encoder=enc, fl2va_model=fl2, ref2va_model=r2v),
                 inputs=[long_prompt, long_segment_prompts, long_total, long_segment, long_res, long_seed, long_ref, long_scheduler, long_mode, *model_inputs],
                 outputs=[long_output]
             )
@@ -2269,7 +2246,7 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
                         camera_inspect.click(lambda state: {"frames": state["frames"], "fps": 24, "keyframes": json.loads(state["trajectory"])}, [camera_editor], [camera_json], queue=False)
             camera_image.change(update_camera_image, [camera_image, camera_editor], [camera_editor], queue=False)
             camera_btn.click(
-                lambda p, r, tb, s, image, state, enc, lfl, lref, ls, fl2, r2v: execute_generation(p, r, state["frames"] / 24, tb, s, image, camera_state=state, text_encoder=enc, lora_name=lfl, lora_strength=ls, fl2va_model=fl2, ref2va_model=r2v),
+                lambda p, r, tb, s, image, state, enc, fl2, r2v: execute_generation(p, r, state["frames"] / 24, tb, s, image, camera_state=state, text_encoder=enc, fl2va_model=fl2, ref2va_model=r2v),
                 [camera_prompt, camera_res, camera_turbo, camera_seed, camera_image, camera_editor, *model_inputs], [camera_output]
             )
             gr.Markdown("[工具來源：NyckM / 3d-Camera-control-H3-Minimax](https://github.com/NyckM/3d-Camera-control-H3-Minimax) · 原生 ComfyUI 中亦可搜尋 `bruxosdovfx Camera H3` 節點。")
@@ -2287,8 +2264,8 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
             studio_output = gr.Video(label="完整成片", interactive=False, height=520)
             plan_btn.click(plan_storyboard, [story_text, story_seconds], shot_table)
             render_btn.click(
-                lambda rows, r, tb, enc, lfl, lref, ls, fl2, r2v: render_storyboard(
-                    rows, r, tb, text_encoder=enc, lora_name=lfl, lora_strength=ls, fl2va_model=fl2, ref2va_model=r2v),
+                lambda rows, r, tb, enc, fl2, r2v: render_storyboard(
+                    rows, r, tb, text_encoder=enc, fl2va_model=fl2, ref2va_model=r2v),
                 [shot_table, story_res, story_turbo, *model_inputs], studio_output)
 
         with gr.Tab("📜 紀錄"):
