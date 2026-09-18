@@ -37,8 +37,9 @@ if exist "%PORT%\python_embeded\python.exe" (
         echo [2/5] Downloading ComfyUI portable ^(~2 GB^) ...
         curl -L --fail -o ComfyUI_portable.7z "%COMFY_7Z%" || goto :dlfail
     )
-    echo [3/5] Extracting ComfyUI portable ...
-    7zr.exe x -y ComfyUI_portable.7z >nul || goto :extractfail
+    echo [3/5] Extracting ComfyUI portable ^(this takes a minute^) ...
+    REM Don't treat a 7zr warning exit as fatal; judge success by the extracted python.exe below.
+    7zr.exe x -y ComfyUI_portable.7z >nul
 )
 if not exist "%PORT%\python_embeded\python.exe" (
     echo [X] ComfyUI portable did not extract as expected. Delete ComfyUI_portable.7z and re-run.
@@ -61,7 +62,7 @@ echo [5/5] Installing packages, custom nodes and core H3 models ...
 echo       ^(~35 GB of models with SHA-256 checks; this is the long part.^)
 echo.
 cd /d "%~dp0%PORT%"
-call install.bat
+call "%~dp0%PORT%\install.bat"
 exit /b 0
 
 :notools
