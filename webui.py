@@ -1846,11 +1846,8 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
             model_ref2va = gr.Dropdown(label="Ref2VA 擴散模型（參考影音／長片）", choices=ref2va_models,
                                        value=krea2_default(ref2va_models, H3_REF2VA_MODEL))
         gr.Markdown(
-            "兩個選單分別對應 FL2VA（文生／首尾幀）與 Ref2VA（參考／長片），各自只列該用途的模型：\n"
-            "- `..._Q4_K_M.gguf`：Q4 量化，最省顯存、最快，**內定推薦**（搭「Turbo LoRA・4 步」）。\n"
-            "- `..._int8_convrot.safetensors`：INT8，畫質較好但較慢、吃更多顯存。\n"
-            "- `DasiwaMinimaxH3_...Turbo...`：DaSiwa 混合（NSFW），**已內建蒸餾 → 採樣模式選「模型內建蒸餾・8 步」**，約 21GB。\n"
-            "- Krea2 圖片模型在「🎨 圖片」分頁，不會出現在這裡。"
+            "- `..._Q4_K_M.gguf`：Q4 量化，最省顯存、最快，內定推薦（搭「Turbo LoRA・4 步」）。\n"
+            "- `..._int8_convrot.safetensors`：INT8，畫質較好但較慢、吃更多顯存。"
         )
         model_refresh.click(refresh_model_choices, None, [model_encoder, model_fl2va, model_ref2va], queue=False)
     model_inputs = [model_encoder, model_fl2va, model_ref2va]
