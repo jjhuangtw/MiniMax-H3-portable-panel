@@ -1389,6 +1389,34 @@ def execute_ref_generation(
     progress(1.0, desc="參考影音生成完成！")
     return output_video_path
 
+
+LIPSYNC_DEFAULT_PROMPT = (
+    "[Shot 1] The person shown in <Picture 1> looks toward the camera and speaks naturally, with the "
+    "lips, jaw and facial expression moving in accurate sync to <Audio 1>. Keep the same face, hairstyle, "
+    "clothing, background and lighting as <Picture 1>, with only small natural head movement and blinking. "
+    "The camera holds a static shot.\n\n"
+    "overall_soundscape: A quiet room tone consistent with the scene.\n\n"
+    "non_diegetic_music: N/A")
+
+
+def execute_lipsync(image, audio, prompt, resolution_str, mode, seed,
+                    text_encoder=None, lora_name=None, lora_strength=1.0,
+                    fl2va_model=None, ref2va_model=None, progress=gr.Progress()):
+    """One portrait + one audio -> lip-synced talking video (Ref2VA with the audio locked)."""
+    if not image:
+        raise gr.Error("請先上傳一張人像照片（會成為 <Picture 1>）。")
+    if not audio:
+        raise gr.Error("請先上傳一段要對嘴的語音（會成為 <Audio 1>）。")
+    if not (prompt or "").strip():
+        prompt = LIPSYNC_DEFAULT_PROMPT
+    return execute_ref_generation(
+        prompt, resolution_str, 5, mode, seed,
+        image_files=[image], video_files=[], use_video_audio=False,
+        audio_files=[audio], audio_mode=AUDIO_MODE_COPY, scheduler="simple",
+        text_encoder=text_encoder, lora_name=lora_name, lora_strength=lora_strength,
+        fl2va_model=fl2va_model, ref2va_model=ref2va_model, progress=progress)
+
+
 def preview_reference_labels(image_files, video_files, use_video_audio, audio_files):
     video_items = [(path, bool(use_video_audio and has_audio_stream(path))) for path in (video_files or [])]
     labels = reference_labels(list(image_files or []), video_items, list(audio_files or []))
@@ -1954,6 +1982,42 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
                     p, r, d, tb, s, imgs, vids, va, auds, mode, scheduler=sch, text_encoder=enc, lora_name=lora, lora_strength=ls, fl2va_model=fl2, ref2va_model=r2v),
                 inputs=[ref_prompt, ref_res, ref_duration, ref_turbo, ref_seed, ref_images, ref_videos, ref_video_audio, ref_audios, ref_audio_mode, ref_scheduler, *model_inputs],
                 outputs=[ref_output]
+            )
+
+        with gr.Tab("🎤 對嘴"):
+            gr.Markdown(
+                "### 一張人像 + 一段語音 → 對嘴影片\n"
+                "最簡單的對嘴：上傳一張人像照當 `<Picture 1>`、一段語音當 `<Audio 1>`，按生成。"
+                "用的是 Ref2VA（跟「參考」分頁同一個模型），音檔會**鎖進生成過程讓嘴型對上**，成片再換回原始音檔。\n\n"
+                "- **不是傳統 Wav2Lip**：H3 會整段重新生成，臉孔、背景會盡量貼近原圖但非逐像素不變；提示詞已內建「保持場景、只動嘴」。\n"
+                "- 片長**自動等於語音長度**（上限約 15 秒；更長請把語音切段，或用「長片」分頁）。\n"
+                "- 正面、清晰、單人、嘴部沒被遮住的人像效果最好。語音建議乾淨人聲。"
+            )
+            with gr.Row():
+                with gr.Column(scale=5):
+                    lip_image = gr.Image(label="人像照片（<Picture 1>）", type="filepath", height=320)
+                    lip_audio = gr.Audio(label="要對嘴的語音（<Audio 1>）", type="filepath")
+                    lip_prompt = gr.Textbox(label="提示詞（已內建，可自行微調）", lines=6, value=LIPSYNC_DEFAULT_PROMPT)
+                    with gr.Row():
+                        lip_res = gr.Dropdown(
+                            label="畫面解析度",
+                            choices=[
+                                "480 × 864 (9:16 直式 · 推薦)",
+                                "768 × 1344 (9:16 直式 · 高清)",
+                                "864 × 480 (16:9 橫式)",
+                                "960 × 544 (16:9 橫式 · 中清)",
+                            ],
+                            value="480 × 864 (9:16 直式 · 推薦)")
+                        lip_mode = gr.Dropdown(label="🚀 採樣模式", choices=SAMPLING_MODES, value=MODE_TURBO_LORA)
+                        lip_seed = gr.Number(label="隨機種子 (-1 為隨機)", value=-1, precision=0)
+                    lip_btn = gr.Button("🎤 生成對嘴影片", variant="primary", size="lg")
+                with gr.Column(scale=5):
+                    lip_output = gr.Video(label="對嘴影片（含原始語音）", interactive=False, height=520)
+            lip_btn.click(
+                fn=lambda img, aud, p, r, md, s, enc, lora, ls, fl2, r2v: execute_lipsync(
+                    img, aud, p, r, md, s, text_encoder=enc, lora_name=lora, lora_strength=ls, fl2va_model=fl2, ref2va_model=r2v),
+                inputs=[lip_image, lip_audio, lip_prompt, lip_res, lip_mode, lip_seed, *model_inputs],
+                outputs=[lip_output]
             )
 
         with gr.Tab("📼 長片"):
