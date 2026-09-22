@@ -30,7 +30,6 @@ import history
 from prompt_builder import (AUDIO_MODE_COPY, AUDIO_MODE_REFERENCE, AUTO_REF_MODES, add_base_prompt_builder, add_ref_prompt_builder,
                             generate_auto_ref_prompt, label_table, reference_labels, with_keyframe_instruction)
 from camera_controls import CAMERA_WEB, DEFAULT_CAMERA, EDITOR_JS, update_camera_image, apply_camera_graph
-from video_analyzer_bridge import PROVIDER_PRESETS, run_video_analysis
 
 gr.set_static_paths(paths=[str(CAMERA_WEB)])
 
@@ -3082,120 +3081,6 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
                 lambda rows, r, tb, enc, fl2, r2v: render_storyboard(
                     rows, r, tb, text_encoder=enc, fl2va_model=fl2, ref2va_model=r2v),
                 [shot_table, story_res, story_turbo, *model_inputs], studio_output)
-        with gr.Tab("🔍 影片分析"):
-            gr.Markdown(
-                "### 🎥 影片反推 MiniMax H3 / LTX-2.5 提示詞 (Video Analyzer)\n"
-                "上傳任意既有影片，利用視覺 Vision LLM（如 Google Gemini、OpenAI GPT-4o 或本地 Ollama / LM Studio）、"
-                "搭配 Whisper 語音轉錄（ASR）與 PANNs 音效標籤辨識，深度解析影片內容，自動產生符合官方規範的標準提示詞與首尾關鍵幀！\n\n"
-                "- 🌟 **支援模式**：\n"
-                "  - **T2VA**：反推純文字生影音提示詞（含主體、鏡頭運動、物理音效、對白、BGM）。\n"
-                "  - **I2VA / FL2VA / L2VA**：自動提取影片首幀／首尾幀，並產生精準對齊關鍵幀的 H3 提示詞。\n"
-                "  - **LTX**：轉化為 LTX-2.5 專用的自然語言段落提示詞。\n"
-                "  - **僅分析 (Analysis Only)**：提取結構化分鏡 JSON、語音對白與聲音音效標籤。\n"
-                "- 🚀 **LLM 端點**：預設推薦 **Google Gemini (gemini-2.5-flash)** 極速分析；亦支援本地 **Ollama (Qwen2.5-VL)** 或 **LM Studio**。"
-            )
-            with gr.Row():
-                with gr.Column(scale=5):
-                    va_video = gr.File(label="來源影片 (支援 .mp4, .mov 等)", file_types=["video"], file_count="single", type="filepath")
-                    with gr.Row():
-                        va_mode = gr.Dropdown(
-                            label="🎯 目標模式",
-                            choices=[
-                                "T2VA (MiniMax H3 文生影音)",
-                                "I2VA (MiniMax H3 首幀生影音)",
-                                "FL2VA (MiniMax H3 首尾幀影音)",
-                                "L2VA (MiniMax H3 末幀生影音)",
-                                "LTX (LTX-2.5 自然語言段落)",
-                                "僅分析不生提示詞 (Analysis Only)"
-                            ],
-                            value="T2VA (MiniMax H3 文生影音)",
-                            scale=3
-                        )
-                        va_method = gr.Dropdown(
-                            label="🖼️ 解析方式",
-                            choices=[
-                                "智慧多幀抽圖 (frames・通用推薦，相容所有視覺 LLM)",
-                                "完整影片直傳 (video_url・限支援視頻直傳之 Video-LLM)"
-                            ],
-                            value="智慧多幀抽圖 (frames・通用推薦，相容所有視覺 LLM)",
-                            scale=3
-                        )
-                    with gr.Row():
-                        va_provider = gr.Dropdown(
-                            label="🤖 LLM 服務商",
-                            choices=list(PROVIDER_PRESETS.keys()),
-                            value="Google Gemini (推薦 · 雲端極速)",
-                            scale=3
-                        )
-                        va_model = gr.Textbox(label="模型名稱 (Model)", value="gemini-2.5-flash", scale=3)
-                    va_api_base = gr.Textbox(label="API 端點 (API Base URL)", value="https://generativelanguage.googleapis.com/v1beta/openai/", lines=1)
-                    va_api_key = gr.Textbox(label="API Key (本地 Ollama/LM Studio 可留空)", type="password", placeholder="請填入您的 Gemini API Key 或 OpenAI API Key...", lines=1)
-                    
-                    with gr.Row():
-                        va_enable_asr = gr.Checkbox(label="🎙️ 啟用 Whisper 語音轉錄 (對白 / 歌詞)", value=True)
-                        va_enable_audio_tags = gr.Checkbox(label="🎵 啟用 PANNs 音樂與音效標籤辨識", value=True)
-                    
-                    va_btn = gr.Button("🔍 開始分析影片並生成提示詞", variant="primary", size="lg")
-                
-                with gr.Column(scale=5):
-                    va_prompt_out = gr.Textbox(label="🎯 生成之標準提示詞 (Prompt)", lines=8, placeholder="分析完成後將顯示標準提示詞...")
-                    with gr.Row():
-                        va_apply_t2v = gr.Button("📋 套用到 🎬 文生")
-                        va_apply_i2v = gr.Button("📋 套用到 🖼️ 首尾幀")
-                        va_apply_ref = gr.Button("📋 套用到 🎞️ 參考")
-                    
-                    with gr.Row():
-                        va_first_frame = gr.Image(label="首幀關鍵幀 (First Frame)", interactive=False)
-                        va_last_frame = gr.Image(label="末幀關鍵幀 (Last Frame)", interactive=False)
-                    
-                    with gr.Accordion("📜 語音對白字幕與音樂音效標籤", open=False):
-                        va_transcript = gr.Textbox(label="語音對白 / 歌詞轉錄 (帶時間戳)", lines=4)
-                        va_audio_tags = gr.Textbox(label="音效 / 樂器 / BGM 標籤 (AudioSet)", lines=3)
-                    
-                    with gr.Accordion("📊 結構化分鏡分析 JSON (analysis.json)", open=False):
-                        va_json = gr.Code(label="Analysis JSON", language="json")
-
-            def va_provider_changed(provider):
-                preset = PROVIDER_PRESETS.get(provider, {})
-                return preset.get("api_base", ""), preset.get("model", "")
-
-            va_provider.change(va_provider_changed, [va_provider], [va_api_base, va_model], queue=False)
-
-            def execute_va(video, mode, method, base, mdl, key, asr, tags, progress=gr.Progress()):
-                return run_video_analysis(
-                    video_path=video,
-                    mode_label=mode,
-                    method_label=method,
-                    api_base=base,
-                    model=mdl,
-                    api_key=key,
-                    enable_asr=asr,
-                    enable_audio_tags=tags,
-                    progress=progress
-                )
-
-            va_btn.click(
-                execute_va,
-                [va_video, va_mode, va_method, va_api_base, va_model, va_api_key, va_enable_asr, va_enable_audio_tags],
-                [va_prompt_out, va_first_frame, va_last_frame, va_transcript, va_audio_tags, va_json]
-            )
-
-            va_apply_t2v.click(
-                lambda p: (p, gr.Info("已成功將提示詞填入 🎬 文生 提示詞框！")),
-                [va_prompt_out],
-                [t2v_prompt]
-            )
-            va_apply_i2v.click(
-                lambda p, f1, f2: (p, f1, f2, gr.Info("已成功將提示詞與首尾關鍵幀填入 🖼️ 首尾幀 分頁！")),
-                [va_prompt_out, va_first_frame, va_last_frame],
-                [i2v_prompt, i2v_first, i2v_last]
-            )
-            va_apply_ref.click(
-                lambda p: (p, gr.Info("已成功將提示詞填入 🎞️ 參考 提示詞框！")),
-                [va_prompt_out],
-                [ref_prompt]
-            )
-
         with gr.Tab("📜 紀錄"):
             gr.Markdown("歷史紀錄已自動分類為 **🖼️ 圖片紀錄** 與 **🎬 影片紀錄**。點選縮圖即可預覽成品、查看提示詞與完整設定，並支援一鍵套用與刪除紀錄。")
             with gr.Tabs():
