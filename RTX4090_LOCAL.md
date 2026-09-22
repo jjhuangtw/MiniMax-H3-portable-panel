@@ -96,20 +96,17 @@
 - 所有影格在合併前留在系統記憶體；864×480 一分鐘約需 18 GB RAM。
 - 節點：https://github.com/Songssx/ComfyUI-MiniMaxH3-TimelineDirector （版本 `53f7211e53385cfe80a9094bc31768f505e05a7c`，GPL-3.0）
 
-## 圖片生成（Krea2 / RedCraft DUAL）
+## 圖片生成（Krea-2 官方純淨 Turbo 版）
 
-「🖼️ 圖片生成」分頁與 H3 無關，用的是 Krea2 圖片模型，架構不同（權重為 `blocks.N.attn.wq/wk/wo`、`txtfusion`，沒有 H3 的 `adaln_proj`、`video_out` 與音訊權重），因此自帶模型、文字編碼器與 VAE。用途是產生素材圖，再拿去當 H3 的參考圖。
+「🎨 圖片」分頁使用 Krea-2 官方蒸餾模型，架構不同於 H3（使用 Qwen3-VL 4B 文字編碼器與 Qwen VAE）。用途是產生高美學質感的圖片素材，再拿去當 H3 的參考圖或對嘴主圖。
 
-- 模型：Civitai「RedCraft | 红潮 | Hybrid H3 & Krea2 DUAL MASO ver 双权重」赤佬 4.0 K2T DUAL 的高噪／低噪兩個權重，各 13,492,685,360 bytes。經 `neetkk/RedCraft-LowNoise-MASO`（版本 `ac65bd04cdded040b6bc73a3c747046a8f3e1c0b`）取得，SHA-256 與 Civitai 官方檔一致，故不需登入 Civitai；本機另存為 `redcraft_krea2_dual_high/low.safetensors`。
-- 配套檔取自 `Comfy-Org/Krea-2`（版本 `e5ea8b4dd7f38f348b138eb0fe29f92c0e367e96`）：`qwen3vl_4b_fp8_scaled.safetensors`（文字編碼器，CLIPLoader type 填 `krea2`）、`qwen_image_vae.safetensors`、`krea2_turbo_lora_rank_64_bf16.safetensors`。
-- `download_krea2_models.py` 可續傳並核對全部五個檔案的 SHA-256。
-- 雙權重接力照作者工作流：高噪模型套 Turbo LoRA 0.85、sigmas `1, 0.956724, 0`；低噪模型套 0.5、sigmas `0.95, 0.904531, 0.840349, 0.759511, 0.654567, 0.512844, 0.310901, 0`；採樣器 `er_sde`、CFG 1，兩段都 add_noise。關閉雙權重時只用高噪模型走一般 KSampler。
-- 作者說明此模型偏重隨機性而非嚴格遵循提示詞，建議用 Danbooru 風格標籤並多次抽卡。
-- **風格／原創角色 LoRA**：放在 `ComfyUI/models/loras/krea2/`，分頁內最多疊三個，套在高噪與低噪兩個模型上（在 Turbo LoRA 之後）。
+- 模型：`Comfy-Org/Krea-2` 官方純淨版 `krea2_turbo_fp8_scaled.safetensors`（13.14 GB，8 步 Turbo 蒸餾加速）。
+- 配套檔取自 `Comfy-Org/Krea-2`：`qwen3vl_4b_fp8_scaled.safetensors`（文字編碼器，CLIPLoader type 填 `krea2`）、`qwen_image_vae.safetensors`、`krea2_turbo_lora_rank_64_bf16.safetensors`。
+- 純淨 8 步單階段工作流：採用 `KSampler`（`steps=8`, `cfg=1.0`, `sampler_name='er_sde'`, `scheduler='simple'`），出圖迅速且細節自然，完全淘汰舊版 RedCraft 雙權重與死黑雜點。
+- **風格／原創角色 LoRA**：放在 `ComfyUI/models/loras/krea2/`，分頁內最多疊三個。
   - 觸發詞放在同名 `.trigger.txt`，生成時自動接到提示詞後面；風格 LoRA 沒有觸發詞通常不會生效。
-  - 縮圖優先用同名 `.preview.png`／`.png`／`.jpg`／`.webp`；按「產生縮圖」會用固定的靜物場景（茶壺、檸檬、花瓶）加觸發詞，以 512×512、8 步快速畫出，只用來看畫風，每張約 4–5 秒。
-  - 已放入 `Comfy-Org/Krea-2` 官方九個風格 LoRA（`download_krea2_style_loras.py` 可續傳並核對 SHA-256），觸發詞取自 ComfyUI 內建 Krea2 範本：darkbrush `monochrome ink wash style`、dotmatrix `monochrome stippling style`、kidsdrawing `naive expressive sketch style`、neondrip `textured abstract style`、rainywindow `rainy window style`、retroanime `purple retro anime style`、softwatercolor `art deco watercolor style`、sunsetblur `ethereal motion blur style`、vintagetarot `vintage tarot style`。
-  - 不收錄以真實人物為對象的肖像 LoRA。
+  - 縮圖優先用同名 `.preview.png`／`.png`／`.jpg`／`.webp`；按「產生縮圖」會用固定的靜物場景（茶壺、檸檬、花瓶）加觸發詞，以 512×512、8 步快速畫出。
+  - 已放入 `Comfy-Org/Krea-2` 官方九個風格 LoRA，觸發詞取自 ComfyUI 內建 Krea2 範本：darkbrush、dotmatrix、kidsdrawing、neondrip、rainywindow、retroanime、softwatercolor、sunsetblur、vintagetarot。
 
 ## SeedVR2
 
@@ -127,5 +124,18 @@ SeedVR2 用於既有影片提升畫質，不是文生影片加速器。
 - 攝影機：https://github.com/NyckM/3d-Camera-control-H3-Minimax （版本 `846880de859959e801b2c506dc424bd5c8b5c6c4`）
 - 編碼依賴：https://github.com/ethanfel/ComfyUI-MiniMax-H3-Edit （版本 `92ff5b926945e21d843fa618ba440ad2f96048e6`）
 - 工具以提示詞引導運鏡，並非幾何攝影機控制；實際角度、速度及場景一致性仍取決於 H3。
+
+## RealRebelAI 長影片擴展（H3 Extender & LongVideos）
+
+社群專家 RealRebelAI 推薦之 MiniMax H3 / FastH3 長影片擴展架構已完整部署：
+- **`ComfyUI_MiniMax_H3_Extender`**：提供 `MiniMaxH3Extender` 與 `MiniMaxH3MotionContextDiskFinalDecode`。核心機制為 Latent 運動視窗滑動接力與硬碟快取釋放 VRAM。
+- **`MiniMax-H3-Longvideos`**：提供 `H3LongVideos` 多段劇本分鏡導演節點。
+- **`ComfyUI-KJNodes`**：提供 `ImageResizeKJv2`、`GetImageSize` 等前處理節點。
+- **官方工作流檔案**：置於 `workflows/realrebelai/`：
+  - `FastH3---T2V_ONLY_Extender_Nodes.json`
+  - `FastH3---T2V---LongVideo_Node.json`
+  - `FastH3---FL2VA.json`
+  - `FastH3---T2V.json`
+  可在原生 ComfyUI（http://127.0.0.1:8188）直接將 JSON 拖入使用。
 
 來源：https://github.com/ModelTC/Minimax-H3-Turbo

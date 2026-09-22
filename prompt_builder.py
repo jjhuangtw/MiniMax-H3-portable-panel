@@ -130,6 +130,82 @@ def label_table(labels):
     return "**提示詞標籤對照**（依上傳順序編號）\n\n| 標籤 | 類型 | 檔案 |\n|---|---|---|\n" + rows
 
 
+AUTO_REF_MODES = [
+    "自動偵測（依上傳素材最佳化）",
+    "🎭 動作/外貌轉移 (換人)",
+    "👗 服裝/特徵替換 (換裝)",
+    "🗣️ 口型同步對嘴",
+    "🎬 畫面自然延伸"
+]
+
+
+def generate_auto_ref_prompt(labels, mode="自動偵測（依上傳素材最佳化）"):
+    if not labels:
+        return ""
+
+    pictures = [l for l, k, n in labels if k == "picture"]
+    videos = [l for l, k, n in labels if k == "video"]
+    audios = [l for l, k, n in labels if k in ("audio", "video_audio")]
+
+    audio_ref = f"Preserved from {audios[0]}." if audios else "Ambient room tone consistent with the scene."
+
+    # 1. 動作 / 外貌轉移 (換人)
+    if mode == "🎭 動作/外貌轉移 (換人)" or (mode.startswith("自動偵測") and videos and pictures):
+        pic = pictures[0] if pictures else "<Picture 1>"
+        vid = videos[0] if videos else "<Video 1>"
+        extra_pics = f" Additional character features refer to {', '.join(pictures[1:])}." if len(pictures) > 1 else ""
+        return (
+            f"[Shot 1] The subject in {vid} performs the exact same actions, body motion, and camera movement, "
+            f"but their appearance, facial identity, hairstyle, and clothing are transferred from {pic}.{extra_pics} "
+            f"Keep the original background, environment, lighting, and camera composition from {vid}.\n\n"
+            f"overall_soundscape: {audio_ref}\n\n"
+            f"non_diegetic_music: N/A"
+        )
+
+    # 2. 服裝 / 特徵替換 (換裝)
+    if mode == "👗 服裝/特徵替換 (換裝)" or (mode.startswith("自動偵測") and len(pictures) >= 2 and not videos):
+        return (
+            f"[Shot 1] Cinematic, photorealistic video. The character shown in {pictures[0]} is the main subject, "
+            f"wearing the outfit and clothing style from {pictures[1]}. "
+            f"The character moves naturally with smooth, subtle body motions and expressive eyes in a harmonious setting.\n\n"
+            f"overall_soundscape: {audio_ref}\n\n"
+            f"non_diegetic_music: N/A"
+        )
+
+    # 3. 口型同步對嘴
+    if mode == "🗣️ 口型同步對嘴" or (mode.startswith("自動偵測") and pictures and any(k == "audio" for l, k, n in labels) and not videos):
+        audio_name = next((l for l, k, n in labels if k == "audio"), "<Audio 1>")
+        pic = pictures[0] if pictures else "<Picture 1>"
+        return (
+            f"[Shot 1] The person shown in {pic} looks toward the camera and speaks naturally, "
+            f"with the lips, jaw, and facial expression moving in accurate sync to {audio_name}. "
+            f"Keep the same face, hairstyle, clothing, background, and lighting as {pic}, "
+            f"with only small natural head movement and blinking. The camera holds a static shot.\n\n"
+            f"overall_soundscape: Speech synchronized with {audio_name}.\n\n"
+            f"non_diegetic_music: N/A"
+        )
+
+    # 4. 畫面延伸
+    if mode == "🎬 畫面自然延伸" or (mode.startswith("自動偵測") and videos and not pictures):
+        vid = videos[0]
+        return (
+            f"[Shot 1] Continuing the movement and camera path from {vid}, the scene develops naturally "
+            f"while strictly preserving the character identity, lighting, and environmental details from {vid}.\n\n"
+            f"overall_soundscape: {audio_ref}\n\n"
+            f"non_diegetic_music: N/A"
+        )
+
+    # 5. 單張圖片 (圖生影音) 或通用備用
+    pic = pictures[0] if pictures else "<Picture 1>"
+    return (
+        f"[Shot 1] Starting from the exact composition in {pic}, the scene comes to life with fluid, natural motion. "
+        f"The subject in {pic} moves with subtle lifelike actions and realistic lighting.\n\n"
+        f"overall_soundscape: {audio_ref}\n\n"
+        f"non_diegetic_music: N/A"
+    )
+
+
+
 def default_reference_rows(labels, audio_mode):
     rows = []
     subject = 0
