@@ -154,11 +154,40 @@ def is_comfy_running():
     except Exception:
         return False
 
+def detect_gpu_vram_gb():
+    """Total VRAM of GPU 0 in GB via nvidia-smi; None if it cannot be read."""
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=10,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        return int(out.stdout.strip().splitlines()[0]) / 1024.0
+    except Exception:
+        return None
+
+
+def vram_launch_args():
+    """(reserve_vram, vram_headroom, profile_label) auto-scaled to the detected GPU VRAM.
+    The 24GB defaults reserve ~5.5 GB, which is too much on smaller cards, so lower it."""
+    gb = detect_gpu_vram_gb()
+    if gb is None:
+        return "1", "1", "未偵測到顯存 → 保守設定（約 16GB 級）"
+    if gb >= 22:
+        return "2.5", "3", f"{gb:.0f} GB → 高顯存（RTX 4090 全速）"
+    if gb >= 14:
+        return "1", "1", f"{gb:.0f} GB → 中顯存（建議只用 Q4 模型、關高清；需 32GB+ 系統 RAM，較慢）"
+    return "0.5", "0", f"{gb:.0f} GB → 低顯存（僅 Q4、短片；明顯較慢，可能吃共享記憶體）"
+
+
+VRAM_RESERVE, VRAM_HEADROOM, VRAM_PROFILE_LABEL = vram_launch_args()
+
+
 def ensure_comfy_server():
     global comfy_process
     if is_comfy_running():
         return True
-    
+
+    print(f"[WebUI] GPU 顯存設定：{VRAM_PROFILE_LABEL}")
     print("[WebUI] Starting ComfyUI backend server...")
     cmd = [
         PYTHON_EXE,
@@ -166,8 +195,8 @@ def ensure_comfy_server():
         "--listen", "127.0.0.1",
         "--port", "8188",
         "--fast", "fp8_matrix_mult", "fp16_accumulation",
-        "--reserve-vram", "2.5",
-        "--vram-headroom", "3",
+        "--reserve-vram", VRAM_RESERVE,
+        "--vram-headroom", VRAM_HEADROOM,
         "--disable-auto-launch"
     ]
     log_path = os.path.join(BASE_DIR, "comfy_server.log")
@@ -3226,6 +3255,12 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
             demo.load(load_vid_history, None, [vid_hist_rows, vid_hist_gallery, vid_hist_count, vid_selected_idx, vid_hist_prompt, vid_hist_output, vid_hist_details, vid_hist_seed_note])
 
         with gr.Tab("ℹ️ 系統"):
+            gr.Markdown(
+                f"### 🎛️ 顯存自動設定\n"
+                f"開機時自動偵測 GPU 顯存並調整後端保留參數（`--reserve-vram {VRAM_RESERVE}` / `--vram-headroom {VRAM_HEADROOM}`）：\n\n"
+                f"> **本機偵測結果：{VRAM_PROFILE_LABEL}**\n\n"
+                f"顯存較小（16GB／12GB）時請只用 **Q4 GGUF 模型**、關閉「高清二次採樣」、片長短一些；系統 RAM 建議 32GB 以上（不夠會很慢）。"
+            )
             gr.Markdown("""
             ### 🖥️ 運算硬體與環境架構
             - **硬體**：NVIDIA GeForce RTX 4090 (24GB VRAM)
