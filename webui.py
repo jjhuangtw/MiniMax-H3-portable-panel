@@ -139,6 +139,8 @@ SINGLE_PASS_MAX_PIXELS = 1344 * 768
 comfy_process = None
 
 PANEL_TITLE = "MiniMax H3 Portable"
+# The last tab embeds this prompt site; it sends no X-Frame-Options / CSP, so an iframe works.
+PROMPT_SITE_URL = "https://archi-prompt.com/"
 
 def open_existing_webui():
     url = "http://127.0.0.1:7860"
@@ -1178,6 +1180,66 @@ def execute_qwen_image_edit(primary_image, ref_image, extra_ref_images, prompt, 
                    mode="指令修圖", model=dit_model, encoder=encoder_model)
     progress(1.0, desc="修圖完成！")
     return output_path
+
+# 🖍️ 筆刷修圖: Qwen-Image-2.1 gets the untouched picture as <image1> and the same picture with the
+# user's strokes as <image2>. Tested against the strokes-only picture: with both, the new object lands
+# exactly on the strokes and the rest stays unchanged; with the sketch alone it drifts.
+BRUSH_MODES = {
+    "✏️ 依筆畫加入新東西（畫出形狀 → 變成真的）":
+        "add {what} exactly where the brush strokes are drawn in <image2>, matching the position, shape and size of the strokes",
+    "🔄 把塗到的地方換成別的":
+        "replace whatever is covered by the brush strokes in <image2> with {what}, in the same position and size",
+    "🧽 移除塗到的東西":
+        "remove the objects covered by the brush strokes in <image2> and fill that area naturally so it matches the surrounding background",
+    "🎨 自由指示（筆畫只標出位置）":
+        "{what}; the brush strokes in <image2> only mark where to apply this change",
+}
+BRUSH_REMOVE_MODE = "🧽 移除塗到的東西"
+BRUSH_EXAMPLES = ["一棵高大茂密的大樹", "一座木造涼亭", "盛開的花圃", "一整面落地玻璃窗", "一盞溫暖的吊燈",
+                  "一張米白色布沙發", "一隻坐著的柴犬", "一條石板步道", "游泳池", "夕陽晚霞的天空"]
+BRUSH_COLORS = ["#22c55e", "#ef4444", "#3b82f6", "#facc15", "#a855f7", "#ffffff", "#000000"]
+
+def brush_edit_prompt(mode, instruction):
+    what = (instruction or "").strip()
+    if mode != BRUSH_REMOVE_MODE and not what:
+        raise gr.Error("請在「要變成什麼」寫一句話，例如：一棵高大茂密的大樹。")
+    action = BRUSH_MODES.get(mode, BRUSH_MODES[next(iter(BRUSH_MODES))]).format(what=what)
+    extra = f" Additional note: {what}." if mode == BRUSH_REMOVE_MODE and what else ""
+    return (f"<image2> is <image1> with colored brush strokes drawn on it. Edit <image1>: {action}.{extra} "
+            "Keep everything else in <image1> exactly unchanged: same composition, lighting, colors and details. "
+            "The result must not contain any brush strokes. Photorealistic and seamless.")
+
+def brush_editor_images(editor):
+    """(original, sketch) RGB PNG paths from a gr.ImageEditor value; refuses a canvas with no strokes."""
+    from PIL import Image
+    if not editor or not editor.get("background"):
+        raise gr.Error("請先上傳一張圖片（支援 Ctrl+V 貼上）。")
+    from PIL import ImageChops
+    layers = [layer for layer in (editor.get("layers") or []) if layer]
+    has_strokes = any(Image.open(layer).convert("RGBA").getchannel("A").getbbox() for layer in layers)
+    if not has_strokes and editor.get("composite"):
+        # Single-layer editors may not report the stroke layer: compare the composite with the background.
+        before = Image.open(editor["background"]).convert("RGB")
+        after = Image.open(editor["composite"]).convert("RGB").resize(before.size)
+        has_strokes = ImageChops.difference(before, after).getbbox() is not None
+    if not has_strokes:
+        raise gr.Error("還沒畫筆畫：請用筆刷在圖上畫幾筆，標出要改的位置。")
+    paths = []
+    for key in ("background", "composite"):
+        image = Image.open(editor[key]).convert("RGBA")
+        flat = Image.new("RGB", image.size, (255, 255, 255))
+        flat.paste(image, mask=image.getchannel("A"))
+        path = os.path.join(tempfile.gettempdir(), f"h3_brush_{key}_{uuid.uuid4().hex[:8]}.png")
+        flat.save(path)
+        paths.append(path)
+    return paths
+
+def execute_brush_edit(editor, mode, instruction, res_choice, steps, seed, dit_model, encoder_model, vae_model,
+                       progress=gr.Progress()):
+    original, sketch = brush_editor_images(editor)
+    return execute_qwen_image_edit(original, sketch, None, brush_edit_prompt(mode, instruction), "", res_choice,
+                                   steps, 1.0, seed, "euler", "simple", dit_model, encoder_model, vae_model,
+                                   "auto", "default", progress=progress)
 
 def gpu_status_text(note=""):
     try:
@@ -2853,6 +2915,47 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                 "（7B DiT Int8 ConvRot + Qwen3-VL 8B Int8 + BF16 VAE）。"
             )
 
+        with gr.Tab("🖍️ 筆刷修圖"):
+            gr.Markdown(
+                "### 🖍️ 畫幾筆 → AI 生成新圖\n"
+                "1. 上傳一張圖（建築、室內、庭園、人物都可以，支援 Ctrl+V 貼上）。\n"
+                "2. 選筆刷顏色，在想改的地方**畫幾筆**：例如在空地畫出一棵樹的樣子、在牆上塗出窗戶的位置。畫錯可以用橡皮擦。\n"
+                "3. 選「筆畫的用途」，寫一句「要變成什麼」（中文就可以），按生成。其餘地方會保持原樣。\n\n"
+                "結果可以按「🔄 用結果繼續畫」再改下一處。使用「🖌️ 修圖」分頁同一組 Qwen-Image-2.1 模型；RTX 4090 每張約 20 秒（第一次要載入模型較久）。")
+            missing_models_notice(qwen_image_models_ready(), " Qwen-Image-2.1 修圖模型", 3)
+            with gr.Row():
+                with gr.Column(scale=5):
+                    brush_editor = gr.ImageEditor(
+                        label="上傳圖片後直接在上面畫（右側工具列可換顏色、粗細、橡皮擦）", type="filepath", format="png",
+                        height=560, sources=("upload", "clipboard"), layers=False, transforms=(),
+                        brush=gr.Brush(colors=BRUSH_COLORS, default_color=BRUSH_COLORS[0], color_mode="defaults", default_size=12),
+                        eraser=gr.Eraser(default_size=24))
+                    brush_mode = gr.Radio(label="筆畫的用途", choices=list(BRUSH_MODES), value=next(iter(BRUSH_MODES)))
+                    with gr.Row():
+                        brush_instruction = gr.Textbox(label="要變成什麼（移除時可留空）", lines=2, scale=3,
+                                                       placeholder="例如：一棵高大茂密的大樹／一座木造涼亭／一整面落地玻璃窗")
+                        brush_example = gr.Dropdown(label="常用範例（點選填入）", choices=BRUSH_EXAMPLES, value=None, scale=2)
+                    with gr.Row():
+                        brush_res = gr.Dropdown(label="輸出解析度", choices=QWEN_IMAGE_RESOLUTIONS, value=QWEN_IMAGE_RESOLUTIONS[0])
+                        brush_steps = gr.Slider(label="採樣步數", minimum=10, maximum=50, value=25, step=1)
+                        brush_seed = gr.Number(label="隨機種子 (-1 為隨機)", value=-1, precision=0)
+                    brush_btn = gr.Button("🖍️ 依筆畫生成新圖", variant="primary", size="lg")
+                with gr.Column(scale=5):
+                    brush_output = gr.Image(label="生成結果", type="filepath", height=560, interactive=False)
+                    with gr.Row():
+                        brush_again = gr.Button("🔄 用結果繼續畫", variant="secondary")
+                        brush_to_i2v = gr.Button("📋 套用到 🖼️ 首尾幀 (首幀)", variant="secondary")
+                        brush_to_ref = gr.Button("📋 套用到 🎞️ 參考", variant="secondary")
+            brush_example.change(lambda text: text or gr.update(), [brush_example], [brush_instruction], queue=False)
+            brush_btn.click(execute_brush_edit,
+                            [brush_editor, brush_mode, brush_instruction, brush_res, brush_steps, brush_seed,
+                             qwen_model, qwen_encoder, qwen_vae],
+                            [brush_output])
+            brush_again.click(lambda img: {"background": img, "layers": [], "composite": img} if img else gr.update(),
+                              [brush_output], [brush_editor], queue=False)
+            brush_to_i2v.click(lambda img: img, [brush_output], [i2v_first], queue=False)
+            brush_to_ref.click(lambda img: [img] if img else None, [brush_output], [ref_images], queue=False)
+
         with gr.Tab("🎥 攝影機"):
             gr.Markdown("### 參考圖片 → 3D 軌跡 → FL2VA Q4 影音\n上傳圖片後，拖曳紫色攝影機設定環繞角度與仰角，滾輪調整距離；在時間軸選取關鍵幀後修改位置。▶ 只預覽運鏡，按下生成按鈕才會生成影片。\n\n此模式固定原始場景，讓攝影機移動。軌跡會轉為 H3 提示詞，實際角度與時間可能有偏差。")
             with gr.Row():
@@ -3101,6 +3204,22 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                 "- 影音模型：MiniMax H3 FL2VA／Ref2VA Q4_K_M GGUF（預設）、Qwen3-VL 32B NVFP4 文字編碼器、H3 影音 VAE（有 INT8 版時自動使用）\n"
                 "- 加速：`minimax_h3_fl2v_turbo_8step_v1.0`、`minimax_h3_ref2v_turbo_4step_v0.1` Turbo LoRA"
             )
+
+        with gr.Tab("🌐 提示詞網站") as prompt_site_tab:
+            # The site renders blank when it loads inside a hidden tab, so the frame gets its src the
+            # first time this tab is opened (and keeps it, so switching tabs does not reload it).
+            gr.HTML(
+                f'<div style="margin-bottom:6px">建築提示詞網站 <a href="{PROMPT_SITE_URL}" target="_blank" rel="noopener">'
+                f'{PROMPT_SITE_URL}</a>（在新視窗開啟）· 在下方挑好提示詞後複製，貼回各分頁的提示詞欄即可。'
+                '要登入（Google 不允許在框架內登入）或分享提示詞時，請按上面的連結在新視窗開啟。</div>'
+                f'<iframe id="prompt-site-frame" data-src="{PROMPT_SITE_URL}" title="提示詞網站" '
+                'allow="clipboard-read; clipboard-write" referrerpolicy="no-referrer-when-downgrade" '
+                'style="width:100%;height:calc(100vh - 220px);min-height:720px;border:1px solid #2a2a2a;'
+                'border-radius:8px;background:#ffffff"></iframe>')
+            prompt_site_tab.select(None, None, None, js="""() => {
+                const frame = document.getElementById('prompt-site-frame');
+                if (frame && !frame.getAttribute('src')) frame.setAttribute('src', frame.dataset.src);
+            }""")
 
     def fl2va_model_changed(model, resolution_a, resolution_b, mode_a, mode_b, mode_c, mode_d):
         """Big trunks cannot run the HD refine (the upscaler runs out of VRAM), and baked-turbo

@@ -8,7 +8,9 @@ The panel detects your VRAM at start-up and adjusts itself — no settings to le
 開啟時自動偵測顯存並調整設定，不用自己記參數。
 
 Tabs / 分頁：Text-to-Video · FL2VA keyframes · Ref2VA reference · V2V · lip-sync · SeedVR2 video upscale ·
-Krea2 image generation · Qwen-Image editing · 3D camera · storyboard · history.
+Krea2 image generation · Qwen-Image editing · 🖍️ brush editing (scribble a few strokes → AI redraws them
+as real objects) · 3D camera · storyboard · history · 🌐 prompt site ([ArchiPrompt](https://archi-prompt.com/),
+architecture / landscape / interior AI prompts, embedded).
 
 **Prompt library / 提示詞範本庫**: every generation tab has a browsable library of ready-to-use
 prompts with **Krea2-rendered thumbnails** — architecture, people, food, animals, nature, product,
