@@ -59,7 +59,7 @@ del /q panel.zip
 
 REM --- 5. install packages + custom nodes + core models ------------------
 echo [5/5] Installing packages, custom nodes and core H3 models ...
-echo       ^(~35 GB of models with SHA-256 checks; this is the long part.^)
+echo       ^(~38 GB of models with SHA-256 checks; this is the long part.^)
 echo.
 cd /d "%~dp0%PORT%"
 call "%~dp0%PORT%\install.bat"

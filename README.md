@@ -1,9 +1,11 @@
 # MiniMax H3 Portable Panel · 影音創作面板
 
 A local Gradio panel for [MiniMax H3](https://huggingface.co/MiniMaxAI/MiniMax-H3) open video+audio
-generation on a single RTX 4090 (24 GB). ComfyUI backend, fully local inference, no cloud API.
+generation on one NVIDIA card with **12–32 GB VRAM**. ComfyUI backend, fully local inference, no cloud API.
+The panel detects your VRAM at start-up and adjusts itself — no settings to learn.
 
-在本機 RTX 4090（24 GB）上跑 MiniMax H3 開源影音生成的 Gradio 面板，後端是 ComfyUI，全程本機推論、不使用雲端 API。
+在本機 NVIDIA 顯卡（**12～32 GB 顯存**）上跑 MiniMax H3 開源影音生成的 Gradio 面板，後端是 ComfyUI，全程本機推論、不使用雲端 API。
+開啟時自動偵測顯存並調整設定，不用自己記參數。
 
 Tabs / 分頁：Text-to-Video · FL2VA keyframes · Ref2VA reference · segmented long video ·
 SeedVR2 video upscale · Krea2 image generation · 3D camera · storyboard · history.
@@ -33,9 +35,18 @@ Krea2 image styles / 圖片風格 LoRA：
 
 ## Requirements / 需要準備
 
-- **NVIDIA GPU**, 24 GB VRAM recommended (RTX 4090). Smaller cards work at lower resolution / length / batch.
-  建議 24 GB VRAM；較小的卡需降低解析度、片長與批次。
-- **Windows 10 (1803+) or 11**, and **~200 GB free disk** (core set ~35 GB, plus any optional models).
+- **NVIDIA GPU with 12–32 GB VRAM.** The panel reads the card at start-up and switches off what it
+  cannot run. 開啟時自動偵測顯存，跑不動的選項會自動關閉：
+
+  | VRAM 顯存 | Works well 建議用法 | Turned off automatically 自動關閉 |
+  | --- | --- | --- |
+  | 24–32 GB (4090 / 5090 / 3090) | everything, incl. HD two-pass and HD long videos 全部功能 | — |
+  | 16 GB (4080 / 5080 / 4070 Ti S) | Q4 models, 864×480–960×544, 4–10 s | HD two-pass, Full HD, HD long videos 高清二次採樣、Full HD、長片高畫質 |
+  | 12 GB (4070 / 3060 12G) | Q4 models, 864×480, 4–6 s | same; SeedVR2 offloads more to CPU 同上 |
+
+  Smaller cards: generate at 864×480, then upscale in the 🔍 tab (SeedVR2). 小顯存先用 864×480 生成，再用「🔍 放大」升解析度。
+- **System RAM 32 GB+** (64 GB recommended for 12–16 GB cards). 系統記憶體 32 GB 以上，12～16 GB 顯卡建議 64 GB。
+- **Windows 10 (1803+) or 11**, and **~200 GB free disk** (core set ~38 GB, plus any optional models).
   No git or Python setup needed — the ComfyUI portable brings its own Python, and `install.bat` uses
   Windows' built-in `curl`/`tar`. 不需要安裝 git 或 Python。
 
@@ -71,10 +82,17 @@ Prefer to do it by hand, or already have ComfyUI portable? Use the three manual 
    雙擊 `install.bat`：裝套件、免 git 下載 custom node 與核心模型（核對雜湊），跑完會問要不要開啟面板；
    之後平常用 `run_webui.bat`。中斷了再跑一次即可續傳。
 
-Optional models — run these `.py` files yourself later if you want them / 之後想要再自行執行：
-`download_heretic_encoder.py` (uncensored encoder, panel default), `download_int8_vae.py` (lower-VRAM
-video VAE), `download_hd_models.py` (HD upscale), `download_seedvr2.py` (video upscaler),
-`download_krea2_style_loras.py` (Krea2 style LoRAs).
+**Optional models / 選用模型** — double-click **`download_extras.bat`** and type a number
+（雙擊 `download_extras.bat`，輸入數字即可）:
+1 Krea2 image model for the 🎨 tab (~19 GB) · 2 Krea2 style LoRAs · 3 Qwen-Image-2.1 for the 🖌️ edit tab (~17 GB) ·
+4 SeedVR2 for the 🔍 upscale tab (~7 GB) · 5 HD two-pass upscaler (24 GB cards) · 6 Heretic text encoder.
+A tab whose model is missing says which number to pick. 缺模型的分頁會直接告訴你要選哪個數字。
+
+**Long videos / 長片**: works out of the box with TimelineDirector. The newer
+[Smite79 H3-LongVideos](https://github.com/Smite79/MiniMax-H3-LongVideos) engine (character memory,
+dialogue, multi-shot) must be installed by hand — its licence does not allow other installers to fetch it.
+Download it into `ComfyUI\custom_nodes\` and restart; the panel then uses it by default.
+長片開箱即可用 TimelineDirector；較新的 Smite79 引擎依其授權需自行下載到 `ComfyUI\custom_nodes\`，重啟後面板自動改用它。
 
 Full per-tab notes (Traditional Chinese): [RTX4090_LOCAL.md](RTX4090_LOCAL.md).
 
@@ -86,6 +104,10 @@ Full per-tab notes (Traditional Chinese): [RTX4090_LOCAL.md](RTX4090_LOCAL.md).
 | `restart_webui.bat` | Restart panel + backend (refuses while a job runs) · 重啟（有任務時拒絕） |
 | `cancel_generation.bat` | Cancel current + queued jobs · 取消目前與排隊生成 |
 | `free_vram.bat` | Unload models, free VRAM · 卸載模型、釋放顯存 |
+| `download_extras.bat` | Optional models menu · 選用模型下載選單 |
+
+To force a smaller VRAM profile (e.g. if detection misreads the card), run `set H3_VRAM_GB=16` in a
+command prompt before `run_webui.bat`. 偵測錯誤時可先 `set H3_VRAM_GB=16` 再啟動，強制使用較小的設定。
 
 ## License & responsible use / 授權與使用須知
 
@@ -104,4 +126,4 @@ Full per-tab notes (Traditional Chinese): [RTX4090_LOCAL.md](RTX4090_LOCAL.md).
 ## Credits / 致謝
 
 MiniMax H3 (MiniMaxAI), Comfy-Org, ComfyUI, and the authors of TimelineDirector, H3 Latent Upscaler,
-SeedVR2, 3D Camera Control and H3 Edit custom nodes.
+SeedVR2, 3D Camera Control, H3 Edit, ComfyUI-GGUF-Loader and Smite79's H3-LongVideos custom nodes.

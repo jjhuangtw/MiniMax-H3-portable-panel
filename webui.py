@@ -115,31 +115,39 @@ HD_REFINE_SIGMAS = "0.9035, 0.6316, 0.3158, 0.0"
 LONG_OVERLAP_FRAMES = 39
 HD_LABEL = "✨ 高清二次採樣（輸出上面選的解析度）"
 HD_INFO = "先用一半解析度生成，再以 H3 潛空間放大模型放大、補 3 步細節。會自動使用 Turbo。4 秒實測：1280×704 約 2 分 15 秒、1920×1088 約 5 分鐘。"
+HD_LOW_VRAM_INFO = "高清二次採樣需要 24GB 級顯卡，這台顯存不足已關閉；要更高解析度請生成後用「🔍 放大」（SeedVR2）。"
 FULL_HD_CHOICES = [
     "1920 × 1088 (16:9 Full HD · 需勾選高清二次採樣)",
     "1088 × 1920 (9:16 直式 Full HD · 需勾選高清二次採樣)",
 ]
 BASE_RES_CHOICES = [
-    "864 × 480 (16:9 標清 · 4090 推薦極速不爆顯存)",
-    "960 × 544 (16:9 中清 · 4090 兼顧品質)",
+    "864 × 480 (16:9 標清 · 推薦，最省顯存)",
+    "960 × 544 (16:9 中清)",
     "1056 × 608 (16:9 高清)",
-    "1280 × 704 (16:9 超清 · 需較多顯存)",
-    "1344 × 768 (16:9 原生官方上限)",
-    "480 × 864 (9:16 直式短影音 · 4090 推薦)",
-    "768 × 1344 (9:16 直式短影音 · 高清)",
+    "1280 × 704 (16:9 超清 · 較吃顯存)",
+    "1344 × 768 (16:9 原生官方上限 · 最吃顯存)",
+    "480 × 864 (9:16 直式短影音 · 推薦)",
+    "768 × 1344 (9:16 直式短影音 · 高清 · 最吃顯存)",
 ]
 DEFAULT_RES = BASE_RES_CHOICES[0]
+# Ref2VA / V2V skip the 1344×768 ceiling: the reference latents already take part of the budget.
+REF_RES_CHOICES = [choice for choice in BASE_RES_CHOICES if not choice.startswith("1344")]
+# Above this area a 12–16 GB card tends to spill into shared memory or run out of VRAM.
+LOW_VRAM_MAX_PIXELS = 960 * 544
 # Above the official 1344×768 area a single pass is untrained and too heavy for 24 GB.
 SINGLE_PASS_MAX_PIXELS = 1344 * 768
 
 comfy_process = None
+
+PANEL_TITLE = "MiniMax H3 Portable"
 
 def open_existing_webui():
     url = "http://127.0.0.1:7860"
     try:
         response = requests.get(f"{url}/config", timeout=3)
         response.raise_for_status()
-        if response.json().get("title") != "MiniMax H3 Portable - RTX 4090":
+        # startswith: panels started before the rename still carry " - RTX 4090".
+        if not str(response.json().get("title", "")).startswith(PANEL_TITLE):
             return False
     except (requests.RequestException, ValueError):
         return False
@@ -154,32 +162,43 @@ def is_comfy_running():
     except Exception:
         return False
 
-def detect_gpu_vram_gb():
-    """Total VRAM of GPU 0 in GB via nvidia-smi; None if it cannot be read."""
+def detect_gpu():
+    """(name, total VRAM in GB) of GPU 0 via nvidia-smi; (None, None) if it cannot be read."""
     try:
         out = subprocess.run(
-            ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+            ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
             capture_output=True, text=True, timeout=10,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        return int(out.stdout.strip().splitlines()[0]) / 1024.0
+        name, mib = out.stdout.strip().splitlines()[0].rsplit(",", 1)
+        return name.strip(), int(mib) / 1024.0
     except Exception:
-        return None
+        return None, None
 
 
-def vram_launch_args():
+def vram_launch_args(gb):
     """(reserve_vram, vram_headroom, profile_label) auto-scaled to the detected GPU VRAM.
     The 24GB defaults reserve ~5.5 GB, which is too much on smaller cards, so lower it."""
-    gb = detect_gpu_vram_gb()
     if gb is None:
         return "1", "1", "未偵測到顯存 → 保守設定（約 16GB 級）"
     if gb >= 22:
-        return "2.5", "3", f"{gb:.0f} GB → 高顯存（RTX 4090 全速）"
+        return "2.5", "3", f"{gb:.0f} GB → 高顯存（24GB 以上，全功能全速）"
     if gb >= 14:
-        return "1", "1", f"{gb:.0f} GB → 中顯存（建議只用 Q4 模型、關高清；需 32GB+ 系統 RAM，較慢）"
-    return "0.5", "0", f"{gb:.0f} GB → 低顯存（僅 Q4、短片；明顯較慢，可能吃共享記憶體）"
+        return "1", "1", f"{gb:.0f} GB → 中顯存（Q4 模型、864×480～960×544；高清二次採樣已關閉）"
+    return "0.5", "0", f"{gb:.0f} GB → 低顯存（Q4 模型、864×480、4～6 秒短片；較慢）"
 
 
-VRAM_RESERVE, VRAM_HEADROOM, VRAM_PROFILE_LABEL = vram_launch_args()
+GPU_NAME, VRAM_GB = detect_gpu()
+# set H3_VRAM_GB=16 (before run_webui.bat) forces a profile, e.g. when nvidia-smi misreads the card.
+try:
+    VRAM_GB = float(os.environ["H3_VRAM_GB"])
+except (KeyError, ValueError):
+    pass
+VRAM_RESERVE, VRAM_HEADROOM, VRAM_PROFILE_LABEL = vram_launch_args(VRAM_GB)
+# Below 22 GB the HD two-pass upscaler and 0.6 MP+ long videos run out of VRAM; an unreadable
+# card is treated as capable so a failed nvidia-smi never hides features from a 24 GB user.
+LOW_VRAM = VRAM_GB is not None and VRAM_GB < 22
+HD_ALLOWED = not LOW_VRAM
+HD_RES_CHOICES = FULL_HD_CHOICES if HD_ALLOWED else []
 
 
 def ensure_comfy_server():
@@ -280,13 +299,21 @@ def refresh_model_choices():
             gr.Dropdown(choices=model_label_choices(fl2va), value=krea2_default(fl2va, H3_FL2VA_MODEL)),
             gr.Dropdown(choices=model_label_choices(ref2va), value=krea2_default(ref2va, H3_REF2VA_MODEL)))
 
-def resolve_backend_file(node_type, input_name, name, what):
+def extras_hint(option):
+    return f"請雙擊面板資料夾裡的 download_extras.bat，選 {option} 下載，完成後執行 restart_webui.bat。"
+
+def resolve_backend_file(node_type, input_name, name, what, extras_option=None):
     """Map a chosen file to the backend's spelling (path separators differ on Windows)."""
-    wanted = name.replace("\\", "/")
+    wanted = (name or "").replace("\\", "/")
     for choice in backend_choices(node_type, input_name):
         if choice.replace("\\", "/") == wanted:
             return choice
-    raise gr.Error(f"後端找不到{what}「{name}」。若剛下載完成，請執行 restart_webui.bat 後再試。")
+    how = extras_hint(extras_option) if extras_option else "若剛下載完成，請執行 restart_webui.bat 後再試。"
+    raise gr.Error(f"後端找不到{what}「{name or '（未選擇）'}」。{how}")
+
+def missing_models_notice(ready, what, extras_option):
+    if not ready:
+        gr.Markdown(f"> ⚠️ **尚未下載{what}。** {extras_hint(extras_option)}")
 
 def resolve_diffusion_model(model_name, fallback, what):
     model_name = model_name or fallback
@@ -711,6 +738,56 @@ def build_long_video_prompt(
     workflow["41"] = {"class_type": "SaveVideo", "inputs": {"video": ["40", 0], "filename_prefix": "MiniMax_H3_Long", "format": "auto", "codec": "auto"}}
     return workflow
 
+LONG_VIDEO_RESOLUTIONS = [
+    "864 × 480 (16:9 標清 · 推薦)",
+    "960 × 544 (16:9 中清)",
+    "1280 × 720 (16:9 高畫質 · 需 24GB，每鏡建議 6~8 秒)",
+    "1344 × 768 (16:9 最高畫質 · H3 原生上限，需 24GB，每鏡建議 5~6 秒)",
+    "480 × 864 (9:16 直式)",
+    "720 × 1280 (9:16 直式高畫質 · 需 24GB，每鏡建議 6~8 秒)",
+    "1024 × 1024 (1:1 正方)",
+]
+SMITE_ENGINE = "Smite79 H3-LongVideos (推薦・次世代劇本分鏡長片)"
+TIMELINE_ENGINE = "TimelineDirector (舊版滑動視窗)"
+# Smite79's licence forbids bundling it into another installer, so users install it themselves.
+SMITE_REPO_URL = "https://github.com/Smite79/MiniMax-H3-LongVideos"
+
+def smite_node_installed():
+    root = os.path.join(COMFY_DIR, "custom_nodes")
+    try:
+        return any("longvideos" in name.lower() and not name.lower().endswith(".disabled")
+                   and os.path.isdir(os.path.join(root, name)) for name in os.listdir(root))
+    except OSError:
+        return False
+
+LONG_HQ_MIN_MP = 0.6          # at or above this the option counts as 高畫質
+LONG_HQ_MIN_VRAM_GB = 22      # 高畫質 needs a 24GB-class card
+
+
+def long_video_ratio_mp(resolution_str):
+    """(aspect ratio, megapixels) for the H3LongVideos node, computed from the W×H in the label.
+    The node sizes the frame by megapixels (1 MP = 1024×1024) and the ratio."""
+    width, height = parse_resolution(resolution_str)
+    mp = round(width * height / (1024 * 1024), 2)
+    if "9:16" in resolution_str:
+        ratio = "9:16"
+    elif "1:1" in resolution_str:
+        ratio = "1:1"
+    elif "4:3" in resolution_str:
+        ratio = "4:3"
+    else:
+        ratio = "16:9"
+    return ratio, mp
+
+
+# The Ref2VA Turbo LoRA at 4 steps leaves long-video shots undercooked (smeared, over-saturated
+# frames at 1280x720, soft ones at 480p); the H3LongVideos node itself asks for 6-8 with a turbo LoRA.
+LONG_TURBO_MIN_STEPS = 8
+
+def long_video_steps(mode):
+    turbo_lora, steps, _ = mode_settings(mode)
+    return max(steps, LONG_TURBO_MIN_STEPS) if turbo_lora else steps
+
 def build_smite_long_video_prompt(
     prompt_text,
     resolution_str,
@@ -732,7 +809,8 @@ def build_smite_long_video_prompt(
         "3": {"class_type": "VAELoader", "inputs": {"vae_name": video_vae()}},
         "4": {"class_type": "VAELoader", "inputs": {"vae_name": H3_AUDIO_VAE}},
     }
-    turbo_lora, steps, _ = mode_settings(mode)
+    turbo_lora, _, _ = mode_settings(mode)
+    steps = long_video_steps(mode)
     last_model = ["1", 0]
     if turbo_lora:
         workflow["5"] = {
@@ -746,19 +824,7 @@ def build_smite_long_video_prompt(
         last_model = ["5", 0]
     last_model = add_user_lora(workflow, last_model, lora_name, lora_strength)
 
-    # Resolution and Megapixels
-    if "9:16" in resolution_str:
-        res_ratio = "9:16"
-        mp = 0.4 if "480" in resolution_str else 0.5
-    elif "4:3" in resolution_str:
-        res_ratio = "4:3"
-        mp = 0.4
-    elif "1:1" in resolution_str:
-        res_ratio = "1:1"
-        mp = 0.4
-    else:
-        res_ratio = "16:9"
-        mp = 0.4 if ("480" in resolution_str or "標清" in resolution_str) else 0.5
+    res_ratio, mp = long_video_ratio_mp(resolution_str)
 
     h3_inputs = {
         "model": last_model,
@@ -803,7 +869,10 @@ def build_smite_long_video_prompt(
     return workflow
 
 def split_segment_prompts(text):
-    return [part.strip() for part in re.split(r"^\s*---+\s*$", text or "", flags=re.MULTILINE) if part.strip()]
+    """Segments are split by a `---` line; without one, blank-line paragraphs (the Smite79 beat
+    style the tab asks for) are the segments, so switching engines keeps the same text working."""
+    separator = r"^\s*---+\s*$" if re.search(r"^\s*---+\s*$", text or "", flags=re.MULTILINE) else r"\n\s*\n"
+    return [part.strip() for part in re.split(separator, text or "", flags=re.MULTILINE) if part.strip()]
 
 def preview_long_plan(total_seconds, segment_seconds, segment_prompts_text):
     prompts = split_segment_prompts(segment_prompts_text)
@@ -866,6 +935,24 @@ def execute_long_generation(
 
         full_prompt = "\n\n".join(parts)
 
+        if "H3LongVideos" not in requests.get(f"{COMFY_URL}/object_info/H3LongVideos", timeout=10).json():
+            raise gr.Error(
+                "Smite79 長片引擎尚未安裝（它的授權不允許其他安裝程式代為下載，需自行安裝）。"
+                f"請到 {SMITE_REPO_URL} 下載，解壓到 ComfyUI\\custom_nodes\\ 後執行 restart_webui.bat；"
+                f"或把「長片生成系統架構」改選「{TIMELINE_ENGINE}」直接使用。")
+        check_generation_limits(target_ref2va_model, model_options["lora_name"], mode, False, 0, 0, 0, "ref2va")
+
+        _, long_mp = long_video_ratio_mp(resolution_str)
+        if long_mp >= LONG_HQ_MIN_MP:
+            if VRAM_GB is not None and VRAM_GB < LONG_HQ_MIN_VRAM_GB:
+                raise gr.Error(
+                    f"高畫質長片（約 {long_mp:g} MP）需要 24GB 級顯卡，這台偵測到 {VRAM_GB:.0f} GB。"
+                    "請改選 864×480 或 960×544，生成後再用「🔍 放大」SeedVR2 升解析度。")
+            shot_limit = 6 if long_mp >= 0.9 else 8
+            if float(segment_seconds or 10) > shot_limit:
+                gr.Warning(f"高畫質（約 {long_mp:g} MP）建議「每鏡頭目標秒數」≤ {shot_limit} 秒；"
+                           f"目前 {int(float(segment_seconds or 10))} 秒，顯存可能不足而中斷。")
+
         progress(0.15, desc="正在建置 Smite79 H3-LongVideos 長片工作流...")
         prompt_graph = build_smite_long_video_prompt(
             prompt_text=full_prompt,
@@ -883,12 +970,12 @@ def execute_long_generation(
         )
 
         stage_desc = "分鏡劇本規劃 (Plan Only)" if plan_only else "長片連鎖採樣"
-        turbo_lora, steps, _ = mode_settings(mode)
+        steps = long_video_steps(mode)
         output_video_path = run_comfy_workflow(
             prompt_graph,
             steps if not plan_only else 1,
             progress,
-            "RTX 4090 正在載入模型並啟動 Smite79 H3-LongVideos 引擎...",
+            "正在載入模型並啟動 Smite79 H3-LongVideos 引擎...",
             stage_desc,
             output_node="30"
         )
@@ -908,7 +995,8 @@ def execute_long_generation(
         if not segment_prompts and not (global_prompt and global_prompt.strip()):
             raise gr.Error("請輸入全域提示詞，或填寫分段提示詞！")
         windows = plan_long_segments(total_seconds, segment_seconds, LONG_OVERLAP_FRAMES, len(segment_prompts))
-        width, height = parse_resolution(resolution_str)
+        # The long-video labels (e.g. 1280 × 720) are not all on H3's 32 px grid; Smite79 snaps itself.
+        width, height = (int(v / 32 + 0.5) * 32 for v in parse_resolution(resolution_str))
         check_generation_limits(target_ref2va_model, model_options["lora_name"], mode, False, width, height, 0, "ref2va")
 
         if ref_image_name:
@@ -931,7 +1019,7 @@ def execute_long_generation(
         )
         output_video_path = run_comfy_workflow(
             prompt_graph, mode_settings(mode)[1], progress,
-            "RTX 4090 正在載入 Ref2VA 模型...", "長片採樣",
+            "正在載入 Ref2VA 模型...", "長片採樣",
             segments=len(windows),
             output_node="41"
         )
@@ -992,6 +1080,17 @@ def model_file_size(model_name):
 
 def check_generation_limits(model_name, lora_name, mode, hd, width, height, duration, trunk):
     """Refuse combinations that crashed the backend before, and warn about mismatched pairings."""
+    if hd and not HD_ALLOWED:
+        raise gr.Error(
+            f"高清二次採樣需要 24GB 級顯卡，這台偵測到 {VRAM_GB:.0f} GB。"
+            "請用 864×480 或 960×544 生成，再到「🔍 放大」分頁用 SeedVR2 升解析度。")
+    if LOW_VRAM:
+        if model_file_size(model_name) > HD_MAX_MODEL_BYTES:
+            gr.Warning(f"「{model_name}」約 {model_file_size(model_name) / 1000 ** 3:.0f} GB，比 {VRAM_GB:.0f} GB 顯存還大，"
+                       "會非常慢；建議在「🧩 模型設定」改選 Q4 GGUF 模型。")
+        if width and height and width * height > LOW_VRAM_MAX_PIXELS:
+            gr.Warning(f"{width}×{height} 對 {VRAM_GB:.0f} GB 顯存偏大，可能很慢或顯存不足；"
+                       "建議 864×480 或 960×544，之後用「🔍 放大」升解析度。")
     if hd:
         size = model_file_size(model_name)
         if size > HD_MAX_MODEL_BYTES:
@@ -1022,6 +1121,15 @@ def krea2_model_choices():
               if f.endswith(".safetensors") and is_krea2_model(f)]
     # Sort to prioritize official Krea-2 Turbo model first
     return sorted(models, key=lambda f: (0 if "krea2_turbo_fp8" in f.lower() else 1, f))
+
+def krea2_models_ready():
+    names = lambda kind, node, field: {os.path.basename(f) for f in list_model_files(kind, node, field)}
+    return bool(krea2_model_choices()) and KREA2_TEXT_ENCODER in names("text_encoders", "CLIPLoader", "clip_name") \
+        and KREA2_VAE in names("vae", "VAELoader", "vae_name")
+
+def seedvr2_models_ready():
+    return bool(seedvr2_model_choices()) and SEEDVR2_VAE in {
+        os.path.basename(f) for f in list_model_files("SEEDVR2", "SeedVR2LoadVAEModel", "model")}
 
 def krea2_default(choices, preferred):
     for c in choices:
@@ -1139,9 +1247,9 @@ def execute_krea2_generation(prompt, size_str, batch, seed, model_name, lora_nam
     progress(0.05, desc="正在連線至 ComfyUI...")
     if not ensure_comfy_server():
         raise gr.Error("無法啟動或連線至 ComfyUI 後端引擎，請檢查 8188 埠！")
-    model_name = resolve_backend_file("UNETLoader", "unet_name", model_name, "Krea2 擴散模型")
-    text_encoder = resolve_backend_file("CLIPLoader", "clip_name", text_encoder, " Krea2 文字編碼器")
-    vae = resolve_backend_file("VAELoader", "vae_name", vae, " Krea2 VAE")
+    model_name = resolve_backend_file("UNETLoader", "unet_name", model_name, "Krea2 擴散模型", 1)
+    text_encoder = resolve_backend_file("CLIPLoader", "clip_name", text_encoder, " Krea2 文字編碼器", 1)
+    vae = resolve_backend_file("VAELoader", "vae_name", vae, " Krea2 VAE", 1)
     if lora_name and lora_name != NO_LORA:
         lora_name = resolve_backend_file("LoraLoaderModelOnly", "lora_name", lora_name, " Turbo LoRA ")
     else:
@@ -1161,7 +1269,7 @@ def execute_krea2_generation(prompt, size_str, batch, seed, model_name, lora_nam
         sampler=sampler, steps=int(steps), scheduler=scheduler, cfg=float(cfg),
         text_encoder=text_encoder, vae=vae, extra_loras=extra_loras)
 
-    images = run_comfy_workflow(prompt_graph, int(steps), progress, "RTX 4090 正在載入 Krea2 模型...",
+    images = run_comfy_workflow(prompt_graph, int(steps), progress, "正在載入 Krea2 模型...",
                                 "Krea2 採樣", output_node="16", multiple=True)
     history.record("圖片 Krea2", prompt, images, resolution=f"{width}×{height}", seed=int(seed),
                    mode="官方 Turbo", model=model_name, encoder=text_encoder,
@@ -1179,9 +1287,9 @@ def generate_krea2_thumbnails(model_name, text_encoder, vae, turbo_lora, only_mi
         return gallery
     if not ensure_comfy_server():
         raise gr.Error("無法啟動或連線至 ComfyUI 後端引擎，請檢查 8188 埠！")
-    model_name = resolve_backend_file("UNETLoader", "unet_name", model_name, "Krea2 擴散模型")
-    text_encoder = resolve_backend_file("CLIPLoader", "clip_name", text_encoder, " Krea2 文字編碼器")
-    vae = resolve_backend_file("VAELoader", "vae_name", vae, " Krea2 VAE")
+    model_name = resolve_backend_file("UNETLoader", "unet_name", model_name, "Krea2 擴散模型", 1)
+    text_encoder = resolve_backend_file("CLIPLoader", "clip_name", text_encoder, " Krea2 文字編碼器", 1)
+    vae = resolve_backend_file("VAELoader", "vae_name", vae, " Krea2 VAE", 1)
     turbo = resolve_backend_file("LoraLoaderModelOnly", "lora_name", turbo_lora, " Turbo LoRA ") if turbo_lora and turbo_lora != NO_LORA else None
     import shutil
     for index, name in enumerate(names, 1):
@@ -1235,8 +1343,8 @@ def execute_seedvr2_upscale(video_file, resolution_label, batch_size, blocks_to_
         raise gr.Error("無法啟動或連線至 ComfyUI 後端引擎，請檢查 8188 埠！")
     if "SeedVR2VideoUpscaler" not in requests.get(f"{COMFY_URL}/object_info/SeedVR2VideoUpscaler", timeout=10).json():
         raise gr.Error("後端尚未載入 SeedVR2 節點。請執行 restart_webui.bat 後再試。")
-    dit_model = resolve_backend_file("SeedVR2LoadDiTModel", "model", dit_model, " SeedVR2 主模型")
-    vae_model = resolve_backend_file("SeedVR2LoadVAEModel", "model", vae_model, " SeedVR2 VAE")
+    dit_model = resolve_backend_file("SeedVR2LoadDiTModel", "model", dit_model, " SeedVR2 主模型", 4)
+    vae_model = resolve_backend_file("SeedVR2LoadVAEModel", "model", vae_model, " SeedVR2 VAE", 4)
 
     video_name = upload_image(video_file)
     # SeedVR2's seed is a 32-bit int (max 4294967295), unlike H3's 64-bit; keep it in range.
@@ -1249,7 +1357,7 @@ def execute_seedvr2_upscale(video_file, resolution_label, batch_size, blocks_to_
     graph = build_seedvr2_prompt(video_name, dit_model, vae_model, resolution, int(batch_size),
                                  int(blocks_to_swap), color_correction, seed)
     # SeedVR2 reports its own progress; total_steps=0 keeps the bar in the loading state until node 41 finishes.
-    output = run_comfy_workflow(graph, 0, progress, "RTX 4090 正在以 SeedVR2 放大影片...", "SeedVR2 放大")
+    output = run_comfy_workflow(graph, 0, progress, "正在以 SeedVR2 放大影片...", "SeedVR2 放大")
     history.record("SeedVR2 放大", os.path.basename(str(video_file)), output,
                    resolution=resolution_label, seed=int(seed), model=dit_model, mode=f"每批 {int(batch_size)} 幀")
     progress(1.0, desc="影片放大完成！")
@@ -1413,9 +1521,9 @@ def execute_qwen_image_edit(primary_image, ref_image, extra_ref_images, prompt, 
 
     # Check models
     dit_loader = "UnetLoaderGGUF" if (dit_model or "").endswith(".gguf") else "UNETLoader"
-    dit_model = resolve_backend_file(dit_loader, "unet_name", dit_model, "Qwen-Image 擴散模型")
-    encoder_model = resolve_backend_file("CLIPLoader", "clip_name", encoder_model, "Qwen 文字編碼器")
-    vae_model = resolve_backend_file("VAELoader", "vae_name", vae_model, "Qwen VAE")
+    dit_model = resolve_backend_file(dit_loader, "unet_name", dit_model, "Qwen-Image 擴散模型", 3)
+    encoder_model = resolve_backend_file("CLIPLoader", "clip_name", encoder_model, "Qwen 文字編碼器", 3)
+    vae_model = resolve_backend_file("VAELoader", "vae_name", vae_model, "Qwen VAE", 3)
 
     progress(0.2, desc=f"正在建構 Qwen-Image-2.1 修圖圖譜（{len(uploaded_names)} 張圖片輸入）...")
     workflow = build_qwen_image_prompt(
@@ -1437,7 +1545,7 @@ def execute_qwen_image_edit(primary_image, ref_image, extra_ref_images, prompt, 
 
     output_path = run_comfy_workflow(
         workflow, int(steps), progress,
-        "RTX 4090 正在載入 Qwen-Image-2.1 修圖模型...",
+        "正在載入 Qwen-Image-2.1 修圖模型...",
         "Qwen-Image-2.1 採樣修圖中",
         output_node="8",
         multiple=False
@@ -1522,12 +1630,12 @@ def run_comfy_workflow(prompt_graph, total_steps, progress, loading_desc, stage,
                     if segments > 1:
                         done = min(finished_runs, segments - 1)
                         pct = 0.2 + ((done + val / max_val) / segments) * 0.7
-                        progress(pct, desc=f"RTX 4090 {stage}: 第 {done + 1}/{segments} 段 · 步數 {val}/{max_val}...")
+                        progress(pct, desc=f"{stage}: 第 {done + 1}/{segments} 段 · 步數 {val}/{max_val}...")
                         if val >= max_val:
                             finished_runs += 1
                     else:
                         pct = 0.2 + (val / max_val) * 0.7
-                        progress(pct, desc=f"RTX 4090 {stage}中: 步數 {val}/{max_val}...")
+                        progress(pct, desc=f"{stage}中: 步數 {val}/{max_val}...")
 
                 elif msg_type == "executed" and msg_data.get("node") == output_node:
                     output = msg_data.get("output", {})
@@ -1606,7 +1714,7 @@ def execute_generation(
                 raise gr.Error("後端尚未載入攝影機節點。請等目前生成完成，再執行 restart_webui.bat。")
     model_options = resolve_model_options(text_encoder, lora_name, lora_strength, fl2va_model, ref2va_model)
     if hd:
-        resolve_backend_file("MinimaxH3LatentUpscaler3D", "model_name", H3_LATENT_UPSCALER, "潛空間放大模型")
+        resolve_backend_file("MinimaxH3LatentUpscaler3D", "model_name", H3_LATENT_UPSCALER, "潛空間放大模型", 5)
         # The 3-step refine schedule only works with the distilled Turbo LoRA.
         turbo = MODE_TURBO_LORA
 
@@ -1615,9 +1723,12 @@ def execute_generation(
     if not hd and width * height > SINGLE_PASS_MAX_PIXELS:
         if camera_state is not None:
             raise gr.Error("3D 攝影機模式不支援超過 1344×768 的解析度。")
+        if not HD_ALLOWED:
+            raise gr.Error(f"{width}×{height} 超過官方 1344×768，需要高清二次採樣（24GB 級顯卡）；"
+                           f"這台偵測到 {VRAM_GB:.0f} GB，請改選較小的解析度。")
         gr.Info("這個解析度超過官方 1344×768，已自動使用高清二次採樣（含 Turbo）。")
         hd = True
-        resolve_backend_file("MinimaxH3LatentUpscaler3D", "model_name", H3_LATENT_UPSCALER, "潛空間放大模型")
+        resolve_backend_file("MinimaxH3LatentUpscaler3D", "model_name", H3_LATENT_UPSCALER, "潛空間放大模型", 5)
         turbo = True
 
     if seed is None or seed == -1:
@@ -1652,7 +1763,7 @@ def execute_generation(
 
     stage = "高清二次採樣（先半解析度 4 步，放大後再 3 步）" if hd else "採樣"
     output_video_path = run_comfy_workflow(prompt_graph, prompt_graph["20"]["inputs"]["steps"], progress,
-                                           "RTX 4090 正在載入模型與運算中...", stage)
+                                           "正在載入模型與運算中...", stage)
     history.record("3D 攝影機" if camera_state is not None else ("FL2VA" if (first_frame_name or last_frame_name) else "文生影音"),
                    prompt, output_video_path, resolution=f"{width}×{height}", seconds=round(duration, 2), seed=seed,
                    mode=turbo if isinstance(turbo, str) else None, hd=bool(hd),
@@ -1764,7 +1875,7 @@ def execute_ref_generation(
         **model_options
     )
     output_video_path = run_comfy_workflow(prompt_graph, prompt_graph["20"]["inputs"]["steps"], progress,
-                                           "RTX 4090 正在載入 Ref2VA 模型與參考素材...", "Ref2VA 採樣")
+                                           "正在載入 Ref2VA 模型與參考素材...", "Ref2VA 採樣")
     if copy_audio and mux_audio:
         progress(0.97, desc="正在把成片音軌換回原始音檔...")
         output_video_path = mux_original_audio(output_video_path, audio_files[0], match_audio_length=True)
@@ -2154,11 +2265,11 @@ def generate_prompt_thumbnails(category, only_missing=True, progress=gr.Progress
     if not ensure_comfy_server():
         raise gr.Error("無法啟動或連線至 ComfyUI 後端引擎，請檢查 8188 埠！")
     models = krea2_model_choices()
-    model = resolve_backend_file("UNETLoader", "unet_name", krea2_default(models, KREA2_OFFICIAL_MODEL), "Krea2 擴散模型")
+    model = resolve_backend_file("UNETLoader", "unet_name", krea2_default(models, KREA2_OFFICIAL_MODEL), "Krea2 擴散模型", 1)
     encoders = sorted({v for _, v in text_encoder_choices()} | {f for f in list_model_files("text_encoders", "CLIPLoader", "clip_name") if f.endswith(".safetensors")})
-    clip = resolve_backend_file("CLIPLoader", "clip_name", krea2_default(encoders, KREA2_TEXT_ENCODER), "Krea2 文字編碼器")
-    vae = resolve_backend_file("VAELoader", "vae_name", KREA2_VAE, "Krea2 VAE")
-    turbo = resolve_backend_file("LoraLoaderModelOnly", "lora_name", KREA2_TURBO_LORA, "Turbo LoRA")
+    clip = resolve_backend_file("CLIPLoader", "clip_name", krea2_default(encoders, KREA2_TEXT_ENCODER), "Krea2 文字編碼器", 1)
+    vae = resolve_backend_file("VAELoader", "vae_name", KREA2_VAE, "Krea2 VAE", 1)
+    turbo = resolve_backend_file("LoraLoaderModelOnly", "lora_name", KREA2_TURBO_LORA, "Turbo LoRA", 1)
     os.makedirs(PROMPT_THUMB_DIR, exist_ok=True)
     for index, (name, text) in enumerate(todo, 1):
         progress((index - 1) / len(todo), desc=f"產生縮圖 {index}/{len(todo)}：{name}")
@@ -2385,7 +2496,7 @@ body, .gradio-container {
 .header-title { font-size: 2.0rem; font-weight: 800; color: #c4b5fd !important; margin: 0; }
 """
 
-with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
+with gr.Blocks(title=PANEL_TITLE) as demo:
     with gr.Column(elem_classes=["header-box"]):
         gr.HTML("<h1 class='header-title'>MiniMax H3 影音創作面板 (Portable 版)</h1>")
 
@@ -2428,7 +2539,7 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
                     add_prompt_picker(t2v_prompt)
                     add_base_prompt_builder(t2v_prompt)
                     with gr.Row():
-                        t2v_res = gr.Dropdown(label="畫面解析度", choices=[*BASE_RES_CHOICES, *FULL_HD_CHOICES], value=DEFAULT_RES)
+                        t2v_res = gr.Dropdown(label="畫面解析度", choices=[*BASE_RES_CHOICES, *HD_RES_CHOICES], value=DEFAULT_RES)
                         t2v_duration = gr.Slider(
                             label="影片長度 (秒)",
                             minimum=4,
@@ -2439,7 +2550,7 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
                     with gr.Row():
                         t2v_turbo = gr.Dropdown(label="🚀 採樣模式", choices=SAMPLING_MODES, value=MODE_TURBO_LORA)
                         t2v_seed = gr.Number(label="隨機種子 (-1 為隨機)", value=-1, precision=0)
-                    t2v_hd = gr.Checkbox(label=HD_LABEL, info=HD_INFO, value=False)
+                    t2v_hd = gr.Checkbox(label=HD_LABEL, info=HD_INFO if HD_ALLOWED else HD_LOW_VRAM_INFO, value=False, interactive=HD_ALLOWED)
 
                     t2v_btn = gr.Button("🎬 開始生成影音 (Generate Video & Audio)", variant="primary", size="lg")
 
@@ -2470,12 +2581,12 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
                         label="自動加入官方首尾幀對齊宣告", value=True,
                         info="有首幀時第一行加上「<Picture 1> 是第 0 秒」；首尾幀都有時註明尾幀對齊的秒數。提示詞已自行寫好時不會重複加。")
                     with gr.Row():
-                        i2v_res = gr.Dropdown(label="畫面解析度", choices=[*AUTO_RESOLUTION_CHOICES, *BASE_RES_CHOICES, *FULL_HD_CHOICES], value=DEFAULT_RES)
+                        i2v_res = gr.Dropdown(label="畫面解析度", choices=[*AUTO_RESOLUTION_CHOICES, *BASE_RES_CHOICES, *HD_RES_CHOICES], value=DEFAULT_RES)
                         i2v_duration = gr.Slider(label="影片長度 (秒)", minimum=4, maximum=15, value=4, step=1)
                     with gr.Row():
                         i2v_turbo = gr.Dropdown(label="🚀 採樣模式", choices=SAMPLING_MODES, value=MODE_TURBO_LORA)
                         i2v_seed = gr.Number(label="隨機種子 (-1 為隨機)", value=-1, precision=0)
-                    i2v_hd = gr.Checkbox(label=HD_LABEL, info=HD_INFO, value=False)
+                    i2v_hd = gr.Checkbox(label=HD_LABEL, info=HD_INFO if HD_ALLOWED else HD_LOW_VRAM_INFO, value=False, interactive=HD_ALLOWED)
 
                     i2v_btn = gr.Button("🎬 生成首尾幀影音", variant="primary", size="lg")
 
@@ -2523,15 +2634,7 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
                         ref_res = gr.Dropdown(
                             label="畫面解析度",
                             info="自動：依第一支參考影片，沒有影片時依 <Picture 1> 的比例",
-                            choices=[
-                                *AUTO_RESOLUTION_CHOICES,
-                                "864 × 480 (16:9 標清 · 4090 推薦極速不爆顯存)",
-                                "960 × 544 (16:9 中清 · 4090 兼顧品質)",
-                                "1056 × 608 (16:9 高清)",
-                                "1280 × 704 (16:9 超清 · 需較多顯存)",
-                                "480 × 864 (9:16 直式短影音 · 4090 推薦)",
-                                "768 × 1344 (9:16 直式短影音 · 高清)"
-                            ],
+                            choices=[*AUTO_RESOLUTION_CHOICES, *REF_RES_CHOICES],
                             value=next(iter(AUTO_RESOLUTION_CHOICES))
                         )
                         ref_duration = gr.Slider(label="影片長度 (秒)（整條照用音檔時忽略）", minimum=4, maximum=15, value=5, step=1)
@@ -2611,15 +2714,7 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
                         v2v_res = gr.Dropdown(
                             label="畫面解析度",
                             info="自動：依來源影片比例",
-                            choices=[
-                                *AUTO_RESOLUTION_CHOICES,
-                                "864 × 480 (16:9 標清 · 4090 推薦極速不爆顯存)",
-                                "960 × 544 (16:9 中清 · 4090 兼顧品質)",
-                                "1056 × 608 (16:9 高清)",
-                                "1280 × 704 (16:9 超清 · 需較多顯存)",
-                                "480 × 864 (9:16 直式短影音 · 4090 推薦)",
-                                "768 × 1344 (9:16 直式短影音 · 高清)"
-                            ],
+                            choices=[*AUTO_RESOLUTION_CHOICES, *REF_RES_CHOICES],
                             value=next(iter(AUTO_RESOLUTION_CHOICES))
                         )
                     with gr.Row():
@@ -2727,14 +2822,14 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
             )
             with gr.Row():
                 with gr.Column(scale=5):
+                    smite_ready = smite_node_installed()
                     long_engine = gr.Dropdown(
                         label="🎬 長片生成系統架構",
-                        choices=[
-                            "Smite79 H3-LongVideos (推薦・次世代劇本分鏡長片)",
-                            "TimelineDirector (舊版滑動視窗)"
-                        ],
-                        value="Smite79 H3-LongVideos (推薦・次世代劇本分鏡長片)",
-                        info="預設已切換為 Smite79 次世代系統，支援人物記憶、對白識別與多鏡頭音影連貫。"
+                        choices=[SMITE_ENGINE, TIMELINE_ENGINE],
+                        value=SMITE_ENGINE if smite_ready else TIMELINE_ENGINE,
+                        info=("預設為 Smite79 次世代系統，支援人物記憶、對白識別與多鏡頭音影連貫。" if smite_ready else
+                              "尚未安裝 Smite79 引擎，已改用 TimelineDirector（分段提示詞以單獨一行 --- 分隔）。"
+                              f"想用 Smite79 請自行從 {SMITE_REPO_URL} 下載到 ComfyUI\\custom_nodes\\ 後重啟。")
                     )
                     long_prompt = gr.Textbox(
                         label="全域提示詞／劇本場景設定（Scene 氛圍）",
@@ -2753,19 +2848,20 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
                         long_segment = gr.Slider(label="每鏡頭目標秒數 (Shot Seconds)", minimum=5, maximum=15, value=10, step=1)
                         long_total = gr.Slider(label="預估總長度（秒）", minimum=10, maximum=120, value=30, step=1)
                     with gr.Row():
+                        long_res_choices = [r for r in LONG_VIDEO_RESOLUTIONS
+                                            if not (LOW_VRAM and long_video_ratio_mp(r)[1] >= LONG_HQ_MIN_MP)]
                         long_res = gr.Dropdown(
                             label="畫面解析度",
-                            choices=[
-                                "864 × 480 (16:9 標清 · 推薦)",
-                                "960 × 544 (16:9 中清)",
-                                "480 × 864 (9:16 直式)",
-                                "1024 × 1024 (1:1 正方)"
-                            ],
-                            value="864 × 480 (16:9 標清 · 推薦)"
+                            choices=long_res_choices,
+                            value=long_res_choices[0],
+                            info=(f"這台 {VRAM_GB:.0f} GB 顯存只列出省顯存的解析度；要更清楚，生成後用「🔍 放大」。" if LOW_VRAM else
+                                  "高畫質選項更清楚但更慢、更吃顯存（需 24GB），請搭配較短的每鏡秒數；"
+                                  "採樣模式選「非蒸餾・20 步」細節最好。")
                         )
                         long_seed = gr.Number(label="隨機種子 (-1 為隨機)", value=-1, precision=0)
                         long_scheduler = gr.Dropdown(label="採樣排程", choices=SCHEDULERS, value="simple", info=SCHEDULER_INFO)
-                    long_mode = gr.Dropdown(label="採樣模式", choices=SAMPLING_MODES, value=MODE_TURBO_LORA)
+                    long_mode = gr.Dropdown(label="採樣模式", choices=SAMPLING_MODES, value=MODE_TURBO_LORA,
+                                            info=f"長片的 Turbo LoRA 會自動用 {LONG_TURBO_MIN_STEPS} 步（4 步在長片會糊、高畫質會花掉）。")
                     long_plan = gr.Markdown(preview_long_plan(30, 10, ""))
                     with gr.Row():
                         long_plan_btn = gr.Button("📋 先預覽分鏡劇本規劃 (Plan Only・不消耗顯存)", variant="secondary", scale=2)
@@ -2800,14 +2896,18 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
                         "- **短邊解析度**：輸出畫面的短邊像素；4K 很吃顯存與時間。\n"
                         "- **每批幀數**：一次處理幾幀，越多時序越穩、越省時間，但越吃顯存（最少 5）。\n"
                         "- **顯存不足**時把「區塊轉 CPU」調高（0–32），用速度換顯存。")
+            missing_models_notice(seedvr2_models_ready(), " SeedVR2 放大模型", 4)
             with gr.Row():
                 with gr.Column(scale=5):
                     seedvr_video = gr.Video(label="上傳要放大的影片", interactive=True, height=360)
                     with gr.Row():
                         seedvr_res = gr.Dropdown(label="短邊解析度", choices=list(SEEDVR2_RES_CHOICES), value="1080p（短邊 1080）")
-                        seedvr_batch = gr.Slider(label="每批幀數", minimum=5, maximum=33, value=9, step=1)
+                        seedvr_batch = gr.Slider(label="每批幀數", minimum=5, maximum=33, value=5 if LOW_VRAM else 9, step=1)
                     with gr.Row():
-                        seedvr_swap = gr.Slider(label="區塊轉 CPU（省顯存，越高越慢）", minimum=0, maximum=32, value=0, step=1)
+                        # Smaller cards start with part of the 3B DiT on the CPU so the first run does not OOM.
+                        seedvr_swap = gr.Slider(label="區塊轉 CPU（省顯存，越高越慢）", minimum=0, maximum=32, step=1,
+                                                value=(16 if VRAM_GB < 14 else 8) if LOW_VRAM else 0,
+                                                info=f"已依 {VRAM_GB:.0f} GB 顯存自動調整" if LOW_VRAM else None)
                         seedvr_color = gr.Dropdown(label="色彩校正", choices=SEEDVR2_COLOR, value="lab")
                     with gr.Row():
                         seedvr_seed = gr.Number(label="隨機種子 (-1 為隨機)", value=-1, precision=0)
@@ -2834,9 +2934,10 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
             gr.Markdown(
                 "### 🌟 Krea-2 官方純淨版高速生圖\n"
                 "**Krea-2** 是專門的高質感圖像生成模型（使用 Qwen3-VL 4B 文字編碼器與 Qwen VAE），可產生高美學質感圖片作為 H3 影片、對嘴之參考圖。\n\n"
-                "- 🚀 **官方 Turbo 蒸餾模型**：只需 **8 步** 即可極速出圖（RTX 4090 約 5 秒一張），享有純淨細緻的光影與寫實質感。\n"
+                "- 🚀 **官方 Turbo 蒸餾模型**：只需 **8 步** 即可極速出圖（RTX 4090 約 5 秒一張；顯存較小會慢一些），享有純淨細緻的光影與寫實質感。\n"
                 "- 🎨 **風格與角色 LoRA**：支援內建 9 款官方藝術風格 LoRA（復古動漫、水彩、霓虹、雨窗等）及自訂角色 LoRA。"
             )
+            missing_models_notice(krea2_models_ready(), " Krea2 圖片模型", 1)
             with gr.Row():
                 with gr.Column(scale=5):
                     krea_prompt = gr.Textbox(
@@ -2949,17 +3050,10 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
                 "  - 主圖自動標記為 **`<image1>`**（要修改的人物、主體或場景）。\n"
                 "  - 選填參考圖依序標記為 **`<image2>`**、**`<image3>`**…（如要借用的服裝、配飾、風格或第二個人物）。\n"
                 "- 🚀 **原生 2K 與自然語言修圖**：原生支援高達 2048×2048 輸出；支援純英文或中英混合指令（例如：`Keep <image1> unchanged, replace outfit with <image2>`）。\n"
-                "- ⚡ **KV 快取加速**：內建 `QwenImage21Cache` 自動調節顯存（RTX 4090 專用 Int8 量化加速）。"
+                "- ⚡ **KV 快取加速**：內建 `QwenImage21Cache` 自動調節顯存（Int8 量化，12GB 以上顯卡都能用）。"
             )
             qwen_dits, qwen_encoders, qwen_vaes = qwen_image_model_choices()
-            if not qwen_image_models_ready():
-                gr.Markdown(
-                    "> ⚠️ **尚未下載完整 Qwen-Image-2.1 模型。** 請在終端機執行：\n"
-                    "> ```\n"
-                    "> python download_qwen_image_models.py\n"
-                    "> ```\n"
-                    "> 下載完成後重新整理此頁面即可。"
-                )
+            missing_models_notice(qwen_image_models_ready(), " Qwen-Image-2.1 修圖模型", 3)
             with gr.Row():
                 with gr.Column(scale=5):
                     with gr.Row():
@@ -3099,7 +3193,7 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
             story_text = gr.Textbox(label="故事／劇本", lines=10, placeholder="貼上故事內容，每個段落或句子會成為可編輯鏡頭。")
             with gr.Row():
                 story_seconds = gr.Slider(label="每鏡秒數", minimum=4, maximum=15, value=4, step=1)
-                story_res = gr.Dropdown(label="渲染解析度", choices=["864 × 480 (16:9 標清 · 4090 推薦極速不爆顯存)", "960 × 544 (16:9 中清 · 4090 兼顧品質)"], value="864 × 480 (16:9 標清 · 4090 推薦極速不爆顯存)")
+                story_res = gr.Dropdown(label="渲染解析度", choices=BASE_RES_CHOICES[:2], value=DEFAULT_RES)
                 story_turbo = gr.Dropdown(label="採樣模式", choices=SAMPLING_MODES, value=MODE_TURBO_LORA)
             plan_btn = gr.Button("① 自動拆分分鏡", variant="secondary")
             shot_table = gr.Dataframe(headers=["序號", "鏡頭名", "畫面內容", "運鏡", "秒數", "聲音／配樂"], datatype=["number", "str", "str", "str", "number", "str"], interactive=True, wrap=True)
@@ -3257,29 +3351,29 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
         with gr.Tab("ℹ️ 系統"):
             gr.Markdown(
                 f"### 🎛️ 顯存自動設定\n"
-                f"開機時自動偵測 GPU 顯存並調整後端保留參數（`--reserve-vram {VRAM_RESERVE}` / `--vram-headroom {VRAM_HEADROOM}`）：\n\n"
-                f"> **本機偵測結果：{VRAM_PROFILE_LABEL}**\n\n"
-                f"顯存較小（16GB／12GB）時請只用 **Q4 GGUF 模型**、關閉「高清二次採樣」、片長短一些；系統 RAM 建議 32GB 以上（不夠會很慢）。"
+                f"開機時自動偵測顯卡並調整後端參數（`--reserve-vram {VRAM_RESERVE}` / `--vram-headroom {VRAM_HEADROOM}`），"
+                f"也會依顯存自動關閉跑不動的選項，不用自己設定：\n\n"
+                f"> **本機：{GPU_NAME or '未偵測到 NVIDIA 顯卡'} · {VRAM_PROFILE_LABEL}**\n\n"
+                "| 顯存 | 建議用法 | 自動調整 |\n|---|---|---|\n"
+                "| **24～32 GB**（4090／5090／3090） | 全部功能；高清二次採樣、長片高畫質 | — |\n"
+                "| **16 GB**（4080／5080／4070 Ti S） | Q4 模型、864×480～960×544、4～10 秒 | 關閉高清二次採樣與 Full HD、長片只列省顯存解析度、SeedVR2 轉 8 區塊到 CPU |\n"
+                "| **12 GB**（4070／3060 12G） | Q4 模型、864×480、4～6 秒 | 同上，SeedVR2 轉 16 區塊到 CPU |\n\n"
+                "- 顯存較小時，要更清楚的成片：先用 864×480 生成，再到「🔍 放大」用 SeedVR2 升到 1080p。\n"
+                "- 系統記憶體（RAM）建議 **32 GB 以上**，12～16 GB 顯卡建議 **64 GB**；不夠時會很慢。\n"
+                "- 爆顯存或變很慢時，按上方「🧹 釋放顯存」再試一次。"
             )
-            gr.Markdown("""
-            ### 🖥️ 運算硬體與環境架構
-            - **硬體**：NVIDIA GeForce RTX 4090 (24GB VRAM)
-            - **運算引擎**：ComfyUI v0.34.0 (高顯存異步雙流調度 + FP8 矩陣加速)
-            - **支援生成模式**：
-              - 🎬 **Text to Video (文生影音)**
-              - 🖼️ **Image to Video (圖生影音 / 首尾幀)**
-              - 🎥 **Ref2VA 萬用參考（多圖／參考影片／音色參考／外部音軌對嘴）**
-            - **核心模型庫**：
-              - 擴散模型：本目錄內的 FL2VA／Ref2VA Pruned Q4_K_M GGUF
-              - 文字編碼：本目錄內的 Qwen3-VL 32B NVFP4 AWQ；可在「模型設定」切換 Heretic 無審查版
-              - 視訊／音效解碼：本目錄內的 MiniMax H3 VAE
-              - 疾速加速：`minimax_h3_fl2v_turbo_8step_v1.0` & `minimax_h3_ref2v_turbo_4step_v0.1`
-
-            ### 🔗 原生 ComfyUI 節點介面
-            若您需要使用更複雜的節點連線控制，可以隨時前往原生 ComfyUI 頁面：
-            - [開啟 ComfyUI 原生畫布 (http://127.0.0.1:8188)](http://127.0.0.1:8188)
-            - 預設範本位於本目錄的 `workflows/` 資料夾中，包含 `MiniMax_H3_Reference_to_Video_R2V.json` 等，可隨時拖曳至畫布使用。
-            """)
+            gr.Markdown(
+                "### 🧰 需要時再下載的模型\n"
+                "雙擊面板資料夾裡的 **`download_extras.bat`**，輸入數字即可下載（可續傳、自動核對 SHA-256）：\n\n"
+                "1. 🎨 圖片分頁：Krea2 模型（約 19 GB）　2. Krea2 官方風格 LoRA　3. 🖌️ 修圖分頁：Qwen-Image-2.1（約 17 GB）\n"
+                "4. 🔍 放大分頁：SeedVR2（約 7 GB）　5. 高清二次採樣放大模型（僅 24GB）　6. Heretic 文字編碼器\n\n"
+                f"長片的 Smite79 引擎需自行安裝（授權不允許其他安裝程式代為下載）：{SMITE_REPO_URL} ，"
+                "沒裝時長片分頁會自動改用 TimelineDirector。\n\n"
+                "### 🖥️ 架構\n"
+                "- 後端：ComfyUI v0.36.0（本機 http://127.0.0.1:8188 可開原生節點畫布）\n"
+                "- 影音模型：MiniMax H3 FL2VA／Ref2VA Q4_K_M GGUF（預設）、Qwen3-VL 32B NVFP4 文字編碼器、H3 影音 VAE（有 INT8 版時自動使用）\n"
+                "- 加速：`minimax_h3_fl2v_turbo_8step_v1.0`、`minimax_h3_ref2v_turbo_4step_v0.1` Turbo LoRA"
+            )
 
     def fl2va_model_changed(model, resolution_a, resolution_b, mode_a, mode_b, mode_c, mode_d):
         """Big trunks cannot run the HD refine (the upscaler runs out of VRAM), and baked-turbo
@@ -3287,10 +3381,15 @@ with gr.Blocks(title="MiniMax H3 Portable - RTX 4090") as demo:
         model = model or ""
         too_big = model_file_size(model) > HD_MAX_MODEL_BYTES
         baked = "turbo" in model.lower()
-        note = (f"「{model}」約 {model_file_size(model) / 1000 ** 3:.0f} GB，放大階段顯存不足，已停用高清二次採樣。"
-                if too_big else HD_INFO)
-        hd_update = gr.Checkbox(value=False, interactive=not too_big, info=note)
-        choices = [*BASE_RES_CHOICES] if too_big else [*BASE_RES_CHOICES, *FULL_HD_CHOICES]
+        if not HD_ALLOWED:
+            note = HD_LOW_VRAM_INFO
+        elif too_big:
+            note = f"「{model}」約 {model_file_size(model) / 1000 ** 3:.0f} GB，放大階段顯存不足，已停用高清二次採樣。"
+        else:
+            note = HD_INFO
+        no_hd = too_big or not HD_ALLOWED
+        hd_update = gr.Checkbox(value=False, interactive=not no_hd, info=note)
+        choices = [*BASE_RES_CHOICES] if no_hd else [*BASE_RES_CHOICES, *FULL_HD_CHOICES]
         def keep(current, extra=()):
             allowed = [*extra, *choices]
             return gr.Dropdown(choices=allowed, value=current if current in allowed else DEFAULT_RES)

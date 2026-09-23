@@ -35,23 +35,24 @@ if exist "ComfyUI\requirements.txt" (
 )
 
 echo.
-echo [3/5] Custom nodes (pinned versions, downloaded as zips - no git needed)...
+echo [3/5] Custom nodes + their Python packages (pinned versions, zips - no git needed)...
 "%PY%" -u download_nodes.py || goto :fail
 
 echo.
 echo [4/5] Core H3 models (Q4 diffusion + text encoder + VAEs + Turbo LoRAs)...
-echo       This downloads ~35 GB and verifies every SHA-256. It resumes if interrupted.
+echo       This downloads ~38 GB and verifies every SHA-256. It resumes if interrupted.
 "%PY%" -u download_q4_models.py || goto :fail
 "%PY%" -u download_core_models.py || goto :fail
+"%PY%" -u download_int8_vae.py || goto :fail
 "%PY%" -u download_prompt_guides.py || goto :fail
 
 echo.
-echo [5/5] Optional extras - run these yourself later only if you want them:
-echo       download_heretic_encoder.py   uncensored text encoder (panel default; falls back to standard)
-echo       download_int8_vae.py          lower-VRAM video VAE (auto-used if present)
-echo       download_hd_models.py         HD two-pass latent upscaler
-echo       download_seedvr2.py           SeedVR2 video upscaler (6.8 GB)
-echo       download_krea2_style_loras.py official Krea2 style LoRAs (needs a Krea2 base model you provide)
+echo [5/5] Optional extras (image generation, image editing, video upscaling...):
+echo       double-click  download_extras.bat  any time and pick a number.
+echo.
+echo       Long videos: the panel uses TimelineDirector out of the box. The newer
+echo       Smite79 engine must be installed by hand (its licence does not allow
+echo       installers to fetch it): https://github.com/Smite79/MiniMax-H3-LongVideos
 echo.
 echo [OK] Done. Start the panel by double-clicking  run_webui.bat
 echo.

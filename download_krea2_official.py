@@ -1,4 +1,5 @@
-"""Download the official Krea2 Turbo diffusion model from Comfy-Org/Krea-2 and verify SHA-256."""
+"""Download the official Krea2 Turbo image stack from Comfy-Org/Krea-2 and verify every SHA-256:
+the diffusion model plus the Qwen3-VL 4B text encoder, Qwen image VAE and Turbo LoRA it needs."""
 import concurrent.futures
 import hashlib
 import os
@@ -10,11 +11,19 @@ BASE = Path(__file__).resolve().parent / "ComfyUI/models"
 CHUNK = 64 * 1024 * 1024
 
 REPO = "Comfy-Org/Krea-2"
-REMOTE_PATH = "diffusion_models/krea2_turbo_fp8_scaled.safetensors"
-LOCAL_FOLDER = "diffusion_models"
-LOCAL_NAME = "krea2_turbo_fp8_scaled.safetensors"
-SIZE = 13141730784
-EXPECTED_SHA256 = "eb4dd8c612cfd10f64f25b057e6e6bbcb5737c94a7372177e456dbf7579502f1"
+# (revision, remote path, local folder, size, sha256). The diffusion model's hash is the one on main;
+# the three companions are pinned to the revision whose hashes were verified.
+PINNED = "e5ea8b4dd7f38f348b138eb0fe29f92c0e367e96"
+FILES = [
+    ("main", "diffusion_models/krea2_turbo_fp8_scaled.safetensors", "diffusion_models",
+     13141730784, "eb4dd8c612cfd10f64f25b057e6e6bbcb5737c94a7372177e456dbf7579502f1"),
+    (PINNED, "text_encoders/qwen3vl_4b_fp8_scaled.safetensors", "text_encoders",
+     5242467968, "54bd5144df0bbc25dd6ccadfcb826b521445a1b06ae5a42570bdd2974ca87094"),
+    (PINNED, "vae/qwen_image_vae.safetensors", "vae",
+     253806246, "a70580f0213e67967ee9c95f05bb400e8fb08307e017a924bf3441223e023d1f"),
+    (PINNED, "loras/krea2_turbo_lora_rank_64_bf16.safetensors", "loras",
+     469423778, "db8c5bae0a415d448da9d842111d6e51f7d32e47143a3118eb267e5c4773de87"),
+]
 
 
 def digest(path):
@@ -25,7 +34,8 @@ def digest(path):
     return sha.hexdigest()
 
 
-def download():
+def download(revision, REMOTE_PATH, LOCAL_FOLDER, SIZE, EXPECTED_SHA256):
+    LOCAL_NAME = REMOTE_PATH.rsplit("/", 1)[1]
     root = BASE / LOCAL_FOLDER
     root.mkdir(parents=True, exist_ok=True)
     target = root / LOCAL_NAME
@@ -37,7 +47,7 @@ def download():
                 return
         print(f"Existing file incomplete or invalid ({target.stat().st_size} vs {SIZE}), re-downloading...", flush=True)
 
-    url = f"https://huggingface.co/{REPO}/resolve/main/{requests.utils.quote(REMOTE_PATH)}"
+    url = f"https://huggingface.co/{REPO}/resolve/{revision}/{requests.utils.quote(REMOTE_PATH)}"
     parts = root / (LOCAL_NAME + ".parts")
     parts.mkdir(exist_ok=True)
 
@@ -110,4 +120,5 @@ def download():
 
 
 if __name__ == "__main__":
-    download()
+    for entry in FILES:
+        download(*entry)

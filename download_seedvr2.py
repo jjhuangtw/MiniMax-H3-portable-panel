@@ -1,7 +1,4 @@
-"""Download the SeedVR2 3B DiT weight for the video upscaler and verify its SHA-256.
-
-The EMA VAE (ema_vae_fp16.safetensors) is already present and verified; only the DiT is fetched here.
-"""
+"""Download the SeedVR2 3B DiT weight and its EMA VAE for the video upscaler and verify their SHA-256."""
 import concurrent.futures
 import hashlib
 import os
@@ -13,9 +10,10 @@ import requests
 ROOT = Path(__file__).resolve().parent / "ComfyUI/models/SEEDVR2"
 REPO = "numz/SeedVR2_comfyUI"
 REVISION = "09ced71023636e9bc8cdf9cdecfb2625d1e691e8"
-NAME = "seedvr2_ema_3b_fp16.safetensors"
-SIZE = 6783018808
-EXPECTED = "2fd0e03a3dad24e07086750360727ca437de4ecd456f769856e960ae93e2b304"
+FILES = [
+    ("seedvr2_ema_3b_fp16.safetensors", 6783018808, "2fd0e03a3dad24e07086750360727ca437de4ecd456f769856e960ae93e2b304"),
+    ("ema_vae_fp16.safetensors", 501324814, "20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1"),
+]
 CHUNK = 64 * 1024 * 1024
 
 
@@ -27,7 +25,7 @@ def digest(path):
     return sha.hexdigest()
 
 
-def download():
+def download(NAME, SIZE, EXPECTED):
     target = ROOT / NAME
     if target.exists():
         if target.stat().st_size == SIZE and digest(target) == EXPECTED:
@@ -85,4 +83,5 @@ def download():
 
 
 if __name__ == "__main__":
-    download()
+    for entry in FILES:
+        download(*entry)

@@ -1,0 +1,3 @@
+# cmd.exe mis-parses labels in LF-only batch files; keep Windows scripts CRLF in checkouts and ZIP downloads.
+*.bat text eol=crlf
+*.ps1 text eol=crlf

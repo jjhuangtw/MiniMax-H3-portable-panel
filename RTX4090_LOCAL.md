@@ -1,4 +1,4 @@
-# RTX 4090 本機影片方案
+# 本機影片方案（RTX 4090 實測，12～32 GB 顯存皆可用）
 
 啟動：雙擊 `run_webui.bat`，開啟 http://127.0.0.1:7860 。影片推論在本機執行，不使用雲端 API。
 
@@ -14,7 +14,10 @@
 - 兩份 Q4 模型各為 11,420,663,904 bytes。來源：`leejet/MiniMax-H3-GGUF`，版本 `d9c4c6312b4728a68a15a35626d84775a6523783`。`download_q4_models.py` 可續傳並核對 SHA-256；檔案大小不等於生成時的總顯存用量。
 - 文生／圖生：勾選 Turbo，使用 FL2VA 8-step v1.0 LoRA，以作者支援的 4 步模式推論；關閉 Turbo 為 20 步。
 - 初次試片：864×480、4～5 秒。降低步數可能影響細節與動作品質。
-- 顯存採動態管理，保留參數**開機時依偵測到的 GPU 顯存自動調整**（`detect_gpu_vram_gb()` 用 nvidia-smi）：≥22GB 用 `--reserve-vram 2.5 --vram-headroom 3`（4090 全速）；14–22GB 用 `1 / 1`（16GB 可跑 Q4，較慢，需 32GB+ 系統 RAM，別用 INT8/DaSiwa 大模型與高清）；<14GB 用 `0.5 / 0`。偵測失敗時取保守的 `1 / 1`。目前設定顯示在「ℹ️ 系統」分頁。這些不是硬性上限，也不是把兩個參數相加當固定保留量。
+- 顯存採動態管理，保留參數**開機時依偵測到的 GPU 顯存自動調整**（`detect_gpu()` 用 nvidia-smi）：≥22GB 用 `--reserve-vram 2.5 --vram-headroom 3`；14–22GB 用 `1 / 1`；<14GB 用 `0.5 / 0`。偵測失敗時取保守的 `1 / 1`（但不關閉任何功能）。這些不是硬性上限，也不是把兩個參數相加當固定保留量。
+- **顯存 < 22 GB 時面板自動調整**：關閉「高清二次採樣」與 Full HD 選項（執行時也會擋下並說明）、長片只列 ≤ 0.5 MP 的解析度、SeedVR2 預設「每批 5 幀」並把 8 個（<14GB 為 16 個）區塊轉到 CPU；選到比顯存還大的模型（INT8／DaSiwa 約 21 GB）或超過 960×544 的解析度時跳警告建議改用 Q4 與 864×480。目前的偵測結果與對照表在「ℹ️ 系統」分頁。
+- 偵測錯誤或想強制較小的設定：在命令提示字元先 `set H3_VRAM_GB=16` 再執行 `run_webui.bat`。
+- 12～16 GB 卡要高解析度：先 864×480 生成，再到「🔍 放大」用 SeedVR2 升到 1080p。系統 RAM 建議 64 GB（模型會部分卸載到 RAM）。
 - 預設片長 4 秒；不使用 `--highvram` 強制常駐，也不加在動態顯存模式下無效的 `--lowvram`。仍可能需要 CPU 卸載，不能保證不使用共享記憶體；增加餘裕也可能降低速度。
 - 單張 4090 不等於 fal H3 Max 雲端速度；首次讀取大型模型也會增加等待時間。
 - 不同大型模型不要同時生成。先做短片確認，再提高解析度或片長。
@@ -89,12 +92,20 @@
 
 ## 長片（分段接續）
 
-「📼 長片」分頁用 TimelineDirector 的有限分段採樣：每段 5+17n 幀，段間重疊 39 幀；後一段直接接續前一段的 AV 潛空間，合併時去除重疊，音訊以 Soft AV 延續。模型固定為 Ref2VA Q4 + Ref2VA Turbo 4 步 LoRA。
+「📼 長片」分頁有兩個引擎。預設是 Smite79 H3LongVideos（見下節）；**它的授權不允許其他安裝程式代為下載，`install.bat` 不會安裝它**，需自行從 https://github.com/Smite79/MiniMax-H3-LongVideos 下載到 `ComfyUI/custom_nodes/`。沒安裝時面板自動改用 TimelineDirector，選 Smite79 會提示安裝方式。
 
-- 只填全域提示詞時依總長度分段，最後一段縮短以貼近指定長度（不短於 124 幀）；填分段提示詞（以單獨一行 `---` 分隔）時段數以提示詞為準。
+TimelineDirector 用有限分段採樣：每段 5+17n 幀，段間重疊 39 幀；後一段直接接續前一段的 AV 潛空間，合併時去除重疊，音訊以 Soft AV 延續。模型固定為 Ref2VA Q4 + Ref2VA Turbo 4 步 LoRA。
+
+- 只填全域提示詞時依總長度分段，最後一段縮短以貼近指定長度（不短於 124 幀）；填分段提示詞時段數以提示詞為準：有單獨一行 `---` 就以它分段，沒有的話以空一行分段（與 Smite79 的 Beats 寫法相同，切換引擎不用改提示詞）。長片解析度會吸附到 32 px（1280×720 → 1280×736）。
 - 角色參考圖會帶入每段，提示詞需用 `<Picture 1>`。
 - 所有影格在合併前留在系統記憶體；864×480 一分鐘約需 18 GB RAM。
 - 節點：https://github.com/Songssx/ComfyUI-MiniMaxH3-TimelineDirector （版本 `53f7211e53385cfe80a9094bc31768f505e05a7c`，GPL-3.0）
+
+### 預設引擎 Smite79 H3LongVideos：解析度與步數
+
+- 節點以「比例 + megapixels」決定畫面大小（1 MP = 1024×1024），面板依選單的寬×高自動換算：864×480 ≈ 0.4、960×544 ≈ 0.5、1280×720 ≈ 0.88、1344×768 ≈ 0.98（H3 原生上限）、1024×1024 = 1.0；輸出吸附 32 px（1280×720 實際為 1280×736）。
+- **高畫質選項（≥ 0.6 MP）需要 24GB 級顯卡**：偵測到的顯存 < 22 GB 時直接擋下，請改用 864×480／960×544 生成後再用「🔍 放大」SeedVR2。每鏡秒數建議 1280×720 ≤ 8 秒、1344×768 ≤ 6 秒，超過會跳警告。
+- **Turbo LoRA 在長片固定跑 8 步**：Ref2VA Turbo 4 步在 H3LongVideos（res_multistep）下明顯欠採樣——480p 發糊、1280×720 整片色塊暈開；節點作者建議搭 Turbo LoRA 用 6～8 步。RTX 4090 實測 1280×720、單鏡 5 秒：4 步 146 秒（畫面花掉）、8 步 227 秒（清晰）；換 FP16 VAE 結果與 INT8 相同，問題不在 VAE。要更多細節可選「非蒸餾・20 步」。
 
 ## 圖片生成（Krea-2 官方純淨 Turbo 版）
 
@@ -110,7 +121,7 @@
 
 ## SeedVR2
 
-節點與依賴已安裝；權重是否完整請另外確認。`.part` 是下載暫存檔，不代表可用模型。
+`download_extras.bat` 選 4 會下載 3B DiT（`seedvr2_ema_3b_fp16.safetensors`）與 EMA VAE（`ema_vae_fp16.safetensors`），來源 `numz/SeedVR2_comfyUI` 版本 `09ced71`，皆核對 SHA-256。節點的 Python 相依由 `install.bat`（`download_nodes.py`）安裝。`.part` 是下載暫存檔，不代表可用模型。
 SeedVR2 用於既有影片提升畫質，不是文生影片加速器。
 
 ## 3D 攝影機
@@ -119,15 +130,17 @@ SeedVR2 用於既有影片提升畫質，不是文生影片加速器。
 
 在「3D 攝影機」分頁上傳參考圖片，拖曳紫色攝影機或輸入角度、仰角與距離，設定 2–24 個關鍵幀。片長可選約 5.17／10.13／15.08 秒；時間軸顯示最後一幀時刻，會比檔案總長少 1/24 秒。按 ▶ 預覽軌跡，再按「按 3D 軌跡生成影音」。此分頁使用 FL2VA Q4 的固定場景模式，H3 Edit 的提示詞與 options 一起接入，影片使用一般視訊 VAE 解碼。360 度閉合且起訖高度／距離一致時，工具可要求末幀錨定原圖；這不保證中途軌跡精確。
 
-原生 ComfyUI 也已安裝 Camera H3 與 H3 Edit 節點。`workflows/H3_Camera_Q4_API.json` 是接線參考，使用前需替換其中的參考圖片名稱。
+原生 ComfyUI 也已安裝 Camera H3 與 H3 Edit 節點。（本機）`workflows/H3_Camera_Q4_API.json` 是接線參考，使用前需替換其中的參考圖片名稱；此資料夾不在公開 repo。
 
 - 攝影機：https://github.com/NyckM/3d-Camera-control-H3-Minimax （版本 `846880de859959e801b2c506dc424bd5c8b5c6c4`）
 - 編碼依賴：https://github.com/ethanfel/ComfyUI-MiniMax-H3-Edit （版本 `92ff5b926945e21d843fa618ba440ad2f96048e6`）
 - 工具以提示詞引導運鏡，並非幾何攝影機控制；實際角度、速度及場景一致性仍取決於 H3。
 
-## RealRebelAI 長影片擴展（H3 Extender & LongVideos）
+## RealRebelAI 長影片擴展（H3 Extender & LongVideos，僅本機）
 
-社群專家 RealRebelAI 推薦之 MiniMax H3 / FastH3 長影片擴展架構已完整部署：
+以下是這台機器另外手動部署的節點與工作流，面板不依賴它們，`install.bat` 也不會安裝：
+
+RealRebelAI 推薦之 MiniMax H3 / FastH3 長影片擴展架構：
 - **`ComfyUI_MiniMax_H3_Extender`**：提供 `MiniMaxH3Extender` 與 `MiniMaxH3MotionContextDiskFinalDecode`。核心機制為 Latent 運動視窗滑動接力與硬碟快取釋放 VRAM。
 - **`MiniMax-H3-Longvideos`**：提供 `H3LongVideos` 多段劇本分鏡導演節點。
 - **`ComfyUI-KJNodes`**：提供 `ImageResizeKJv2`、`GetImageSize` 等前處理節點。

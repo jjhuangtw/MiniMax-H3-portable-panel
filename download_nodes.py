@@ -7,6 +7,8 @@ Idempotent and resumable: a node whose folder already has __init__.py is skipped
 import io
 import os
 import shutil
+import subprocess
+import sys
 import zipfile
 from pathlib import Path
 
@@ -25,7 +27,18 @@ NODES = [
     ("ComfyUI-MiniMax-H3-Edit", "ethanfel/ComfyUI-MiniMax-H3-Edit",
      "92ff5b926945e21d843fa618ba440ad2f96048e6"),
     ("ComfyUI-SeedVR2_VideoUpscaler", "numz/ComfyUI-SeedVR2_VideoUpscaler", "main"),
+    # Provides UnetLoaderGGUF for the default Q4_K_M diffusion models (Apache-2.0).
+    ("comfyui_gguf_loader", "ChrisColeTech/ComfyUI-GGUF-Loader",
+     "b8486409e0cba3626c09c973078953b2255cb4da"),
 ]
+# Smite79/MiniMax-H3-LongVideos (the long-video tab's default engine) is deliberately not here:
+# its licence forbids bundling it into another installer. The panel falls back to TimelineDirector
+# and links the repo so users can install it themselves.
+
+# pip packages those nodes import that ComfyUI portable does not ship. torch is left alone so the
+# portable's CUDA build is never replaced; the GGUF loader's optional TTS extras are skipped.
+NODE_PACKAGES = ["gguf>=0.13.0", "sentencepiece", "omegaconf>=2.3.0", "diffusers>=0.33.1", "peft>=0.17.0",
+                 "rotary_embedding_torch>=0.5.3", "opencv-python", "matplotlib"]
 
 
 def install(target, repo, ref):
@@ -51,14 +64,26 @@ def install(target, repo, ref):
     print(f"    done: {target}", flush=True)
 
 
+def install_packages():
+    print("  - installing node Python packages ...", flush=True)
+    result = subprocess.run([sys.executable, "-m", "pip", "install", *NODE_PACKAGES])
+    if result.returncode:
+        print("    [!] pip install failed. Re-run to try again.", flush=True)
+    return result.returncode == 0
+
+
 def main():
     CUSTOM_NODES.mkdir(parents=True, exist_ok=True)
+    ok = True
     for target, repo, ref in NODES:
         try:
             install(target, repo, ref)
         except Exception as error:
+            ok = False
             print(f"    [!] {target} failed: {error}. Re-run to try again.", flush=True)
+    ok = install_packages() and ok
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

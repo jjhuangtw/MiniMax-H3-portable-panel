@@ -1,9 +1,9 @@
 @echo off
-title MiniMax H3 WebUI - Portable (RTX 4090)
+title MiniMax H3 WebUI - Portable
 cd /d "%~dp0"
 
 echo =================================================================
-echo   MiniMax H3 Portable WebUI (RTX 4090)
+echo   MiniMax H3 Portable WebUI
 echo =================================================================
 echo.
 echo [1/2] Starting or opening the existing local WebUI...

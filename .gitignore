@@ -2,12 +2,16 @@
 # real-person face LoRAs), logs, backups and the ComfyUI install must never be committed.
 *
 !.gitignore
+!.gitattributes
 !README.md
 !RTX4090_LOCAL.md
 !LICENSE
 !setup.bat
 !install.bat
+!download_extras.bat
 !*.py
+# Ctrl+V image paste for the upload boxes, loaded by webui.py.
+!clipboard_paste.js
 !run_webui.bat
 !restart_webui.bat
 !cancel_generation.bat
