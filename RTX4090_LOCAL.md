@@ -4,7 +4,7 @@
 
 ## ComfyUI 版本
 
-本面板在 **ComfyUI v0.36.0** 上實測通過（FL2VA／Ref2VA／長片三條路徑皆正常）。升級到 v0.36.0 時，除了 `requirements.txt` 顯眼處列的套件，還要一併升級 **`comfy-aimdo` 到 0.5.3**（`pip install "comfy-aimdo==0.5.3"`）——它是 v0.36.0 新記憶體圖編譯器的原生相依，若停在 0.5.2，每次生成會在收尾階段丟 `'MallocGraph' object has no attribute 'rogue_count'` 而失敗。連同要對齊的還有 `comfyui-frontend-package==1.52.7`、`comfyui-workflow-templates==0.11.62`、`comfy-kitchen==0.2.34`。升級後重啟後端才會生效。
+本面板在 **ComfyUI v0.36.0** 上實測通過（FL2VA／Ref2VA 路徑皆正常）。升級到 v0.36.0 時，除了 `requirements.txt` 顯眼處列的套件，還要一併升級 **`comfy-aimdo` 到 0.5.3**（`pip install "comfy-aimdo==0.5.3"`）——它是 v0.36.0 新記憶體圖編譯器的原生相依，若停在 0.5.2，每次生成會在收尾階段丟 `'MallocGraph' object has no attribute 'rogue_count'` 而失敗。連同要對齊的還有 `comfyui-frontend-package==1.52.7`、`comfyui-workflow-templates==0.11.62`、`comfy-kitchen==0.2.34`。升級後重啟後端才會生效。
 
 ## H3 快速生成
 
@@ -15,7 +15,7 @@
 - 文生／圖生：勾選 Turbo，使用 FL2VA 8-step v1.0 LoRA，以作者支援的 4 步模式推論；關閉 Turbo 為 20 步。
 - 初次試片：864×480、4～5 秒。降低步數可能影響細節與動作品質。
 - 顯存採動態管理，保留參數**開機時依偵測到的 GPU 顯存自動調整**（`detect_gpu()` 用 nvidia-smi）：≥22GB 用 `--reserve-vram 2.5 --vram-headroom 3`；14–22GB 用 `1 / 1`；<14GB 用 `0.5 / 0`。偵測失敗時取保守的 `1 / 1`（但不關閉任何功能）。這些不是硬性上限，也不是把兩個參數相加當固定保留量。
-- **顯存 < 22 GB 時面板自動調整**：關閉「高清二次採樣」與 Full HD 選項（執行時也會擋下並說明）、長片只列 ≤ 0.5 MP 的解析度、SeedVR2 預設「每批 5 幀」並把 8 個（<14GB 為 16 個）區塊轉到 CPU；選到比顯存還大的模型（INT8／DaSiwa 約 21 GB）或超過 960×544 的解析度時跳警告建議改用 Q4 與 864×480。目前的偵測結果與對照表在「ℹ️ 系統」分頁。
+- **顯存 < 22 GB 時面板自動調整**：關閉「高清二次採樣」與 Full HD 選項（執行時也會擋下並說明）、SeedVR2 預設「每批 5 幀」並把 8 個（<14GB 為 16 個）區塊轉到 CPU；選到比顯存還大的模型（INT8／DaSiwa 約 21 GB）或超過 960×544 的解析度時跳警告建議改用 Q4 與 864×480。目前的偵測結果與對照表在「ℹ️ 系統」分頁。
 - 偵測錯誤或想強制較小的設定：在命令提示字元先 `set H3_VRAM_GB=16` 再執行 `run_webui.bat`。
 - 12～16 GB 卡要高解析度：先 864×480 生成，再到「🔍 放大」用 SeedVR2 升到 1080p。系統 RAM 建議 64 GB（模型會部分卸載到 RAM）。
 - 預設片長 4 秒；不使用 `--highvram` 強制常駐，也不加在動態顯存模式下無效的 `--lowvram`。仍可能需要 CPU 卸載，不能保證不使用共享記憶體；增加餘裕也可能降低速度。
@@ -29,7 +29,7 @@
 - Heretic 無審查編碼器：`qwen3vl_32b_heretic_minimax_h3_nvfp4.safetensors`（15,683,129,587 bytes），放在 `ComfyUI/models/text_encoders`。來源：`sakamakismile/Qwen3-VL-32B-Heretic-MiniMax-H3-NVFP4`，版本 `2814607c9e6034e2cf2c76da82f996d179567551`。`download_heretic_encoder.py` 可續傳並核對 SHA-256。
 - 面板預設使用 Heretic 版；該檔案不存在時自動退回原版 NVFP4 AWQ。
 - 它移除的是 Qwen3-VL 聊天拒答；H3 只取提示詞隱藏狀態，畫面通常只有細微差異。H3 能否畫出某類內容主要取決於擴散模型的訓練資料，這部分要靠 LoRA。
-- 擴散模型可在「模型設定」挑選：FL2VA 一個選單（文生／首尾幀／3D 攝影機／編劇），Ref2VA 一個選單（參考影音／長片）。清單同時列出 `.gguf` 與 `.safetensors`，載入器依副檔名自動選 `UnetLoaderGGUF` 或 `UNETLoader`。預設仍是兩個 Q4_K_M GGUF；目錄內的 pruned INT8 convrot（各 20,970,379,616 bytes）可直接選用，畫質較好但較慢、顯存吃更多。
+- 擴散模型可在「模型設定」挑選：FL2VA 一個選單（文生／首尾幀／3D 攝影機／編劇），Ref2VA 一個選單（參考影音／V2V／對嘴）。清單同時列出 `.gguf` 與 `.safetensors`，載入器依副檔名自動選 `UnetLoaderGGUF` 或 `UNETLoader`。預設仍是兩個 Q4_K_M GGUF；目錄內的 pruned INT8 convrot（各 20,970,379,616 bytes）可直接選用，畫質較好但較慢、顯存吃更多。
 - `DasiwaMinimaxH3_dasiwaHybridTurboV2_int8.safetensors`（20,967,669,168 bytes）：Civitai「⛩️💀 DaSiWa MiniMax H3 💀⛩️」DaSiWa Hybrid **Turbo** v2，SHA-256 `37C17FD9…A2D03A6B` 與官方一致（由 civitai.red 鏡像取得，雜湊比對確認為同一檔）。混合模型，REF2VA 與 FL2VA 兩條路徑皆可用；本機以「模型內建蒸餾・8 步」實測 864×480／4 秒約 83 秒。
 - 非蒸餾的 DaSiWa Hybrid v2（20,967,669,160 bytes，SHA-256 `4CB8E1EA…56D25F8`）已移出模型目錄，現放在 `_unused_models/`，可自行刪除以釋放 21 GB。其 `final_layer.video_out` 與 ref2va 距離 0.0077、與 fl2va 0.0428，基底主幹為 Ref2VA，但兩條路徑同樣都實測可用（FL2VA 20 步約 160 秒、Ref2VA 20 步約 245 秒）。
 - **採樣模式**（各分頁的下拉選單，取代原本的 Turbo 勾選）：
@@ -42,7 +42,7 @@
 
 - `minimax_h3_video_vae_int8_convrot.safetensors`（2,811,065,184 bytes）放進 `ComfyUI/models/vae`，面板會**自動優先使用**它取代原版 FP16（5.2 GB）；檔案不存在時自動退回 FP16。
 - 來源：`Comfy-Org/MiniMax-H3`（版本 `7e75982b97cd5a41d2dcfa1904ee88d0686d6fd1`），SHA-256 `52a2c8c7…c8e60c0e`。`download_int8_vae.py` 可續傳並核對。
-- Kijai 實測（RTX 5070 12GB、15 秒片）：VAE 顯存從 4,965 MB 降到 2,677 MB（約 −46%），並略快。24GB 卡不缺這點，但長片／高解析度時多出的餘裕仍有幫助。音訊 VAE 不變。
+- Kijai 實測（RTX 5070 12GB、15 秒片）：VAE 顯存從 4,965 MB 降到 2,677 MB（約 −46%），並略快。24GB 卡不缺這點，但高解析度時多出的餘裕仍有幫助。音訊 VAE 不變。
 
 ## Ref2VA 萬用參考
 
@@ -69,15 +69,14 @@
 - **分類**：建築（35）、人物（53）、美食料理／動物寵物／自然風景／產品・廣告／交通載具／運動健身／科幻奇幻（各 8）、🎯 官方格式範例（12，可直接生成）、🎬 分鏡導演（給語言模型的指令，非 H3 提示詞）、📖 官方指南 ×2、原有精選。
 - **官方格式**：建築／人物／成年女性動畫這三類（共 60）已依 h3-prompt-writing skill 重寫為官方英文三段格式（`integrated_multimodal_description` `[Shot 1]` + 官方運鏡詞彙／`overall_soundscape`／`non_diegetic_music`），主題類與官方格式範例亦同。名稱保留、內容合規，套用後可直接生成。原始碼分別在 `prompt_official.py`（重寫版）、`prompt_themes.py`（主題類）。
 - **縮圖**：每個畫面型範本一張縮圖，快取在 `prompt_thumbs/<sha1>.jpg`（隨 repo 提供）。縮圖用 Krea2 圖片模型 512×512、8 步快速生成，**僅供示意**（Krea2 與 H3 是不同模型，非實際成片）；生成前會用 `prompt_to_image_desc()` 去掉欄位標籤、`[Shot]`、運鏡句與台詞，只留純畫面描述。新增範本或想重生成時按「🖼️ 產生此分類縮圖」（勾「只補缺少的」跳過已有）。參考文字類（官方指南、分鏡導演）不做縮圖。
-- **長片分段範例**：「📼 長片」分頁的「📚 分段提示詞範例」有建築／室內／人物／房仲帶看四類，各含 3～12 段、30 秒～2 分鐘的多段提示詞（以單獨一行 `---` 分隔），用官方技巧撰寫、人物與房仲帶看用 `<Picture 1>` 綁定同一角色；選一個「套用」就填入分段框（原始碼 `long_examples.py`）。
 
 ## Ref2VA NSFW LoRA 與採樣排程
 
-- 「Ref2VA 萬用參考」與「長片」分頁新增「採樣排程」選單（simple／beta／sgm_uniform／normal／karras），預設 simple。
+- 「Ref2VA 萬用參考」分頁新增「採樣排程」選單（simple／beta／sgm_uniform／normal／karras），預設 simple。
 - `SexGod1979/AfterMidnight-MiniMax-H3-NSFW`（版本 `4b325f60229c136b97501f5830bb277aace738b6`，Apache-2.0）的兩個 rank64 LoRA 已放入 `ComfyUI/models/loras`，`download_ref2va_loras.py` 可續傳並核對 SHA-256：
   - `AfterMidnight_ref2va_h3_sexytime_rank64-v1.2.safetensors`（1,192,828,320 bytes，動作取向，建議強度 1.0）
   - `AfterMidnight_ref2va_h3_softer_rank64_v1.safetensors`（1,192,828,168 bytes，細節取向，0.8–1.0）
-- **只適用 Ref2VA**（含長片分頁），文生與首尾幀分頁的 FL2VA 模型不適用。
+- **只適用 Ref2VA**，文生與首尾幀分頁的 FL2VA 模型不適用。
 - **作者要求 euler + beta 排程**，否則音訊會出現異常；面板的採樣器固定 euler，排程請自行改成 beta。
 - 這兩個 LoRA 只包含 attention（qkv、out_proj）與 MLP 共 600 個張量，不含 adaln，因此可直接套用於 pruned Q4 GGUF；含 adaln 的 LoRA 在 pruned 模型上會有部分權重被靜默丟棄。
 
@@ -90,23 +89,6 @@
 - 本機實測（4 秒、Turbo、模型已快取）：1280×704 約 135 秒；1920×1088 約 291 秒。兩者 GPU 記憶體用量都接近 24 GB（DynamicVRAM 會盡量用滿）。
 - 超過官方 1344×768 面積的解析度（Full HD 選項）必須勾選高清二次採樣，否則會直接提示。
 
-## 長片（分段接續）
-
-「📼 長片」分頁有兩個引擎。預設是 Smite79 H3LongVideos（見下節）；**它的授權不允許其他安裝程式代為下載，`install.bat` 不會安裝它**，需自行從 https://github.com/Smite79/MiniMax-H3-LongVideos 下載到 `ComfyUI/custom_nodes/`。沒安裝時面板自動改用 TimelineDirector，選 Smite79 會提示安裝方式。
-
-TimelineDirector 用有限分段採樣：每段 5+17n 幀，段間重疊 39 幀；後一段直接接續前一段的 AV 潛空間，合併時去除重疊，音訊以 Soft AV 延續。模型固定為 Ref2VA Q4 + Ref2VA Turbo 4 步 LoRA。
-
-- 只填全域提示詞時依總長度分段，最後一段縮短以貼近指定長度（不短於 124 幀）；填分段提示詞時段數以提示詞為準：有單獨一行 `---` 就以它分段，沒有的話以空一行分段（與 Smite79 的 Beats 寫法相同，切換引擎不用改提示詞）。長片解析度會吸附到 32 px（1280×720 → 1280×736）。
-- 角色參考圖會帶入每段，提示詞需用 `<Picture 1>`。
-- 所有影格在合併前留在系統記憶體；864×480 一分鐘約需 18 GB RAM。
-- 節點：https://github.com/Songssx/ComfyUI-MiniMaxH3-TimelineDirector （版本 `53f7211e53385cfe80a9094bc31768f505e05a7c`，GPL-3.0）
-
-### 預設引擎 Smite79 H3LongVideos：解析度與步數
-
-- 節點以「比例 + megapixels」決定畫面大小（1 MP = 1024×1024），面板依選單的寬×高自動換算：864×480 ≈ 0.4、960×544 ≈ 0.5、1280×720 ≈ 0.88、1344×768 ≈ 0.98（H3 原生上限）、1024×1024 = 1.0；輸出吸附 32 px（1280×720 實際為 1280×736）。
-- **高畫質選項（≥ 0.6 MP）需要 24GB 級顯卡**：偵測到的顯存 < 22 GB 時直接擋下，請改用 864×480／960×544 生成後再用「🔍 放大」SeedVR2。每鏡秒數建議 1280×720 ≤ 8 秒、1344×768 ≤ 6 秒，超過會跳警告。
-- **Turbo LoRA 在長片固定跑 8 步**：Ref2VA Turbo 4 步在 H3LongVideos（res_multistep）下明顯欠採樣——480p 發糊、1280×720 整片色塊暈開；節點作者建議搭 Turbo LoRA 用 6～8 步。RTX 4090 實測 1280×720、單鏡 5 秒：4 步 146 秒（畫面花掉）、8 步 227 秒（清晰）；換 FP16 VAE 結果與 INT8 相同，問題不在 VAE。要更多細節可選「非蒸餾・20 步」。
-
 ## 圖片生成（Krea-2 官方純淨 Turbo 版）
 
 「🎨 圖片」分頁使用 Krea-2 官方蒸餾模型，架構不同於 H3（使用 Qwen3-VL 4B 文字編碼器與 Qwen VAE）。用途是產生高美學質感的圖片素材，再拿去當 H3 的參考圖或對嘴主圖。
@@ -118,6 +100,29 @@ TimelineDirector 用有限分段採樣：每段 5+17n 幀，段間重疊 39 幀�
   - 觸發詞放在同名 `.trigger.txt`，生成時自動接到提示詞後面；風格 LoRA 沒有觸發詞通常不會生效。
   - 縮圖優先用同名 `.preview.png`／`.png`／`.jpg`／`.webp`；按「產生縮圖」會用固定的靜物場景（茶壺、檸檬、花瓶）加觸發詞，以 512×512、8 步快速畫出。
   - 已放入 `Comfy-Org/Krea-2` 官方九個風格 LoRA，觸發詞取自 ComfyUI 內建 Krea2 範本：darkbrush、dotmatrix、kidsdrawing、neondrip、rainywindow、retroanime、softwatercolor、sunsetblur、vintagetarot。
+
+## ✨ AI 專業提示詞（本機自動寫提示詞）
+
+- 文生、首尾幀、編劇、圖片分頁的提示詞欄上方都有「✨ AI 專業提示詞」：輸入一句想法（中文可），選風格，可附參考圖，按下後由本機模型寫成 MiniMax 官方格式並直接填入。靈感來自青橙Lab 的「MiniMax H3 专业自动提示词」教學（https://www.youtube.com/watch?v=Crp5GtXdqEA）；本面板用 ComfyUI v0.36 原生 `TextGenerate` 節點實作，不需額外節點。
+- 各分頁的輸出：
+  - 文生：三段官方格式；只附圖沒寫想法時，只讓圖中既有的東西動起來。
+  - 首尾幀：看首幀（與尾幀）寫動作路徑，`[Shot 1]` 以 `<Picture 1>` 錨定；對齊宣告由面板自動加。
+  - 編劇：`設定：` 一行加 N 行 `畫面｜運鏡｜聲音`，填入共同設定與故事欄。
+  - 圖片：一段 Krea2 用的英文畫面描述。
+- 模型：優先用修圖分頁的 `qwen3vl_8b_int8_convrot`（CLIPLoader type `qwen_image`），沒有時用圖片分頁的 `qwen3vl_4b_fp8_scaled`（type `krea2`）；兩者都沒有時 `download_extras.bat` 選 7 只下載 4B（約 5 GB）。H3 自己的 32B 編碼器被截成 50 層、沒有輸出頭，不能拿來寫字。
+- 寫作規則濃縮自 MiniMax 官方 h3-prompt-writing 指南（`prompt_assistant.py`）；台詞保留原文並補上 `[Chinese]`／`[English]` 語言標籤。附圖先縮到約 0.4 MP 再給模型看。RTX 4090 實測（8B）：文生約 4 秒、編劇 5 鏡約 5 秒；用 AI 寫的文生提示詞實際生成 6 秒片 83 秒，畫面與台詞都正確。
+
+## 編劇（故事 → 分鏡 → 自動剪接）
+
+- 「📝 編劇」分頁有 15 個範本（`story_templates.py`）：🏛️ 建築（山林清水模住宅、都會玻璃帷幕大樓、紅磚三合院老屋新生）、🛋️ 室內設計（北歐原木客廳、日式侘寂茶室、輕奢飯店套房）、🌳 景觀（私人庭院四季花園、都會口袋公園、屋頂空中花園）、🏠 房仲銷售（新成屋三房帶看、預售屋接待中心、實景照片帶看）、🌸 東方女子（茶館旗袍泡茶、雨夜老街撐紙傘、晨光書房寫書法）。選範本按「套用範本」會同時填好共同設定、故事與分鏡表（有建議的圖片用途時也會一併選好），直接按 ② 生成。房仲範本的台詞用官方 `(S1)` + `<d>[Chinese] …</d>` 寫法。
+- **附加圖片**（選填）三種用途：
+  - 👤 人物參考：每個鏡頭改用 Ref2VA，圖片標為 `<Picture 1>`～`<Picture 3>`，提示詞自動加上「每鏡都是圖中同一人」的宣告，臉孔一致性最好。
+  - 🏠 場景參考：同樣走 Ref2VA，宣告「畫面中的建築／空間與圖片一致」。
+  - 🖼️ 逐鏡開場：第 N 張圖當第 N 鏡的首幀（FL2VA，自動加官方首幀對齊宣告）；圖比鏡頭少時，其餘鏡頭只用文字生成。適合房屋實景照片做帶看影片。
+  - 所有鏡頭用同一個固定解析度，才能無損直接剪接。
+- 故事每行一個鏡頭：`畫面內容｜運鏡｜聲音`；沒有 `｜` 時整段依句子拆鏡、用預設運鏡與聲音。
+- 「全片共同設定」會加在每個鏡頭提示詞前面。每鏡是各自獨立的文生影音，服裝、髮型、場景會跟著設定一致，但臉孔仍可能每鏡略有差異；要同一人全片一致請在「附加圖片」上傳人像並選「人物參考」。
+- 實測：茶館範本前 2 鏡 × 4 秒（864×480、Turbo）共 125 秒，剪接後 8.95 秒。
 
 ## SeedVR2
 
@@ -136,17 +141,15 @@ SeedVR2 用於既有影片提升畫質，不是文生影片加速器。
 - 編碼依賴：https://github.com/ethanfel/ComfyUI-MiniMax-H3-Edit （版本 `92ff5b926945e21d843fa618ba440ad2f96048e6`）
 - 工具以提示詞引導運鏡，並非幾何攝影機控制；實際角度、速度及場景一致性仍取決於 H3。
 
-## RealRebelAI 長影片擴展（H3 Extender & LongVideos，僅本機）
+## RealRebelAI 長影片擴展（H3 Extender，僅本機）
 
 以下是這台機器另外手動部署的節點與工作流，面板不依賴它們，`install.bat` 也不會安裝：
 
 RealRebelAI 推薦之 MiniMax H3 / FastH3 長影片擴展架構：
 - **`ComfyUI_MiniMax_H3_Extender`**：提供 `MiniMaxH3Extender` 與 `MiniMaxH3MotionContextDiskFinalDecode`。核心機制為 Latent 運動視窗滑動接力與硬碟快取釋放 VRAM。
-- **`MiniMax-H3-Longvideos`**：提供 `H3LongVideos` 多段劇本分鏡導演節點。
 - **`ComfyUI-KJNodes`**：提供 `ImageResizeKJv2`、`GetImageSize` 等前處理節點。
 - **官方工作流檔案**：置於 `workflows/realrebelai/`：
   - `FastH3---T2V_ONLY_Extender_Nodes.json`
-  - `FastH3---T2V---LongVideo_Node.json`
   - `FastH3---FL2VA.json`
   - `FastH3---T2V.json`
   可在原生 ComfyUI（http://127.0.0.1:8188）直接將 JSON 拖入使用。

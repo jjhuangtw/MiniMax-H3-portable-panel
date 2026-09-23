@@ -25,6 +25,7 @@ echo   3. Edit tab    - Qwen-Image-2.1 image editing        (~17 GB)
 echo   4. Upscale tab - SeedVR2 video upscaler              (~7 GB)
 echo   5. HD two-pass latent upscaler (24 GB cards only)    (~0.7 GB)
 echo   6. Heretic uncensored text encoder                   (~16 GB)
+echo   7. AI prompt writer for the "AI prompt" buttons      (~5 GB, included in 1)
 echo   A. Recommended set: 1 + 4
 echo   Q. Quit  (or just press Enter)
 echo.
@@ -44,6 +45,7 @@ if "!PICK!"=="3" call :run download_qwen_image_models.py
 if "!PICK!"=="4" call :run download_seedvr2.py
 if "!PICK!"=="5" call :run download_hd_models.py
 if "!PICK!"=="6" call :run download_heretic_encoder.py
+if "!PICK!"=="7" call :run download_prompt_llm.py
 goto :menu
 
 :run

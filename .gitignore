@@ -31,6 +31,8 @@
 download_ref2va_loras.py
 download_krea2_models.py
 download_pdd_models.py
+# Large community checkpoints kept to this machine (10Eros-Max 14 GB); never offered to public installs.
+download_10eros.py
 generation_history.jsonl
 *.bak
 *.log

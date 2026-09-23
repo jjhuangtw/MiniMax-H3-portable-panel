@@ -50,10 +50,6 @@ echo.
 echo [5/5] Optional extras (image generation, image editing, video upscaling...):
 echo       double-click  download_extras.bat  any time and pick a number.
 echo.
-echo       Long videos: the panel uses TimelineDirector out of the box. The newer
-echo       Smite79 engine must be installed by hand (its licence does not allow
-echo       installers to fetch it): https://github.com/Smite79/MiniMax-H3-LongVideos
-echo.
 echo [OK] Done. Start the panel by double-clicking  run_webui.bat
 echo.
 set /p LAUNCH="Start the panel now? [Y/N] "

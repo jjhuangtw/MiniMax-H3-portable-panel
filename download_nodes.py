@@ -31,9 +31,8 @@ NODES = [
     ("comfyui_gguf_loader", "ChrisColeTech/ComfyUI-GGUF-Loader",
      "b8486409e0cba3626c09c973078953b2255cb4da"),
 ]
-# Smite79/MiniMax-H3-LongVideos (the long-video tab's default engine) is deliberately not here:
-# its licence forbids bundling it into another installer. The panel falls back to TimelineDirector
-# and links the repo so users can install it themselves.
+# TimelineDirector stays for its MiniMaxH3LockAudioLatent node: 對嘴 and 參考「整條照用」 lock the
+# uploaded audio into the latent with it.
 
 # pip packages those nodes import that ComfyUI portable does not ship. torch is left alone so the
 # portable's CUDA build is never replaced; the GGUF loader's optional TTS extras are skipped.

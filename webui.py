@@ -22,7 +22,8 @@ import random
 from prompt_library import PROMPT_CATEGORIES
 from prompt_reference import OFFICIAL_GUIDE_CATEGORIES
 from prompt_examples import OFFICIAL_FORMAT_EXAMPLES
-from long_examples import LONG_VIDEO_EXAMPLES
+from story_templates import STORY_TEMPLATES
+import prompt_assistant as pa
 from media_tools import (AUTO_RESOLUTION_CHOICES, auto_canvas, concat_video_segments, extract_last_frame,
                         has_audio_stream, media_duration, mux_original_audio, plan_segment_durations,
                         prepare_reference_video, slice_audio, slice_video, SINGLE_SEGMENT_MAX_SECONDS)
@@ -111,8 +112,6 @@ H3_DEFAULT_TEXT_ENCODER = H3_HERETIC_TEXT_ENCODER
 H3_LATENT_UPSCALER = "minimax_h3_latent_upscaler_3d_fp16.safetensors"
 # Refine schedule from LBH-123-AI's H3 latent upscaler example workflow (3 steps from sigma 0.9035).
 HD_REFINE_SIGMAS = "0.9035, 0.6316, 0.3158, 0.0"
-# TimelineDirector's default seam overlap; valid overlaps are 0, 1, 5, 22, 39, 56...
-LONG_OVERLAP_FRAMES = 39
 HD_LABEL = "✨ 高清二次採樣（輸出上面選的解析度）"
 HD_INFO = "先用一半解析度生成，再以 H3 潛空間放大模型放大、補 3 步細節。會自動使用 Turbo。4 秒實測：1280×704 約 2 分 15 秒、1920×1088 約 5 分鐘。"
 HD_LOW_VRAM_INFO = "高清二次採樣需要 24GB 級顯卡，這台顯存不足已關閉；要更高解析度請生成後用「🔍 放大」（SeedVR2）。"
@@ -654,383 +653,6 @@ def snap_h3_length(frames):
         frames += 1
     return frames
 
-def plan_long_segments(total_seconds, segment_seconds, overlap_frames, prompt_count=0):
-    """Frame windows for TimelineDirector: each 5+17n long, each seam overlapping by an H3-valid count."""
-    length = snap_h3_length(round(segment_seconds * 24))
-    if overlap_frames >= length:
-        raise gr.Error("每段秒數太短，必須大於接縫重疊長度。")
-    step = length - overlap_frames
-    if prompt_count:
-        count = prompt_count
-        target = None
-    else:
-        target = round(total_seconds * 24)
-        count = max(1, -(-(target - overlap_frames) // step))
-    if count > 64:
-        raise gr.Error("分段數超過 64，請加長每段秒數或縮短總長度。")
-    windows = [(i * step, i * step + length) for i in range(count)]
-    if target and count > 1:
-        # Trim only the last window toward the requested length, staying inside H3's trained 124+ frame range.
-        start = windows[-1][0]
-        windows[-1] = (start, start + min(length, snap_h3_length(max(target - start, 124))))
-    return windows
-
-def build_long_video_prompt(
-    global_prompt,
-    segment_prompts,
-    windows,
-    width,
-    height,
-    seed,
-    ref_image_name=None,
-    scheduler="simple",
-    text_encoder=H3_DEFAULT_TEXT_ENCODER,
-    lora_name=None,
-    lora_strength=1.0,
-    ref2va_model=H3_REF2VA_MODEL,
-    fl2va_model=None,
-    mode=MODE_TURBO_LORA
-):
-    images = [{"id": "ref_image_1", "file": ref_image_name}] if ref_image_name else []
-    segments = []
-    for index, (start, end) in enumerate(windows):
-        segment = {"startFrame": start, "endFrame": end, "images": ["ref_image_1"] if images else [], "audios": []}
-        if segment_prompts:
-            segment["prompt"] = segment_prompts[index]
-        segments.append(segment)
-    timeline = {
-        "selection": {"start": 0.0, "duration": windows[-1][1] / 24},
-        "videoClips": [],
-        "images": images,
-        "audios": [],
-        "globalPrompt": global_prompt,
-        "segmentConfig": {"mode": "timeline", "count": len(windows), "activeIndex": 0, "segments": segments},
-    }
-
-    workflow = {
-        "1": model_loader(ref2va_model),
-        "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": text_encoder, "type": "minimax"}},
-        "3": {"class_type": "VAELoader", "inputs": {"vae_name": video_vae()}},
-        "4": {"class_type": "VAELoader", "inputs": {"vae_name": H3_AUDIO_VAE}},
-    }
-    turbo_lora, steps, _ = mode_settings(mode)
-    last_model_node = ["1", 0]
-    if turbo_lora:
-        workflow["5"] = {"class_type": "LoraLoaderModelOnly", "inputs": {"model": ["1", 0], "lora_name": H3_REF2VA_LORA, "strength_model": 1.0}}
-        last_model_node = ["5", 0]
-    last_model_node = add_user_lora(workflow, last_model_node, lora_name, lora_strength)
-    workflow["6"] = {"class_type": "MiniMaxH3SigmaShift", "inputs": {"model": last_model_node, "shift_video": 12.0, "shift_audio": 3.0}}
-    workflow["10"] = {
-        "class_type": "MiniMaxH3TimelinePlanner",
-        "inputs": {"width": width, "height": height, "generation_seconds": windows[-1][1] / 24, "timeline_data": json.dumps(timeline, ensure_ascii=False)}
-    }
-    workflow["11"] = {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "euler"}}
-    workflow["12"] = {"class_type": "BasicScheduler", "inputs": {"model": ["6", 0], "scheduler": scheduler, "steps": steps, "denoise": 1.0}}
-    workflow["20"] = {
-        "class_type": "MiniMaxH3FiniteSegmentSampler",
-        "inputs": {
-            "model": ["6", 0], "clip": ["2", 0], "vae": ["3", 0], "audio_vae": ["4", 0],
-            "finite_plan": ["10", 2], "sampler": ["11", 0], "sigmas": ["12", 0],
-            "seed": seed, "continue_audio_latent": True, "ref_image_size": "match"
-        }
-    }
-    workflow["40"] = {"class_type": "CreateVideo", "inputs": {"images": ["20", 1], "audio": ["20", 2], "fps": 24.0}}
-    workflow["41"] = {"class_type": "SaveVideo", "inputs": {"video": ["40", 0], "filename_prefix": "MiniMax_H3_Long", "format": "auto", "codec": "auto"}}
-    return workflow
-
-LONG_VIDEO_RESOLUTIONS = [
-    "864 × 480 (16:9 標清 · 推薦)",
-    "960 × 544 (16:9 中清)",
-    "1280 × 720 (16:9 高畫質 · 需 24GB，每鏡建議 6~8 秒)",
-    "1344 × 768 (16:9 最高畫質 · H3 原生上限，需 24GB，每鏡建議 5~6 秒)",
-    "480 × 864 (9:16 直式)",
-    "720 × 1280 (9:16 直式高畫質 · 需 24GB，每鏡建議 6~8 秒)",
-    "1024 × 1024 (1:1 正方)",
-]
-SMITE_ENGINE = "Smite79 H3-LongVideos (推薦・次世代劇本分鏡長片)"
-TIMELINE_ENGINE = "TimelineDirector (舊版滑動視窗)"
-# Smite79's licence forbids bundling it into another installer, so users install it themselves.
-SMITE_REPO_URL = "https://github.com/Smite79/MiniMax-H3-LongVideos"
-
-def smite_node_installed():
-    root = os.path.join(COMFY_DIR, "custom_nodes")
-    try:
-        return any("longvideos" in name.lower() and not name.lower().endswith(".disabled")
-                   and os.path.isdir(os.path.join(root, name)) for name in os.listdir(root))
-    except OSError:
-        return False
-
-LONG_HQ_MIN_MP = 0.6          # at or above this the option counts as 高畫質
-LONG_HQ_MIN_VRAM_GB = 22      # 高畫質 needs a 24GB-class card
-
-
-def long_video_ratio_mp(resolution_str):
-    """(aspect ratio, megapixels) for the H3LongVideos node, computed from the W×H in the label.
-    The node sizes the frame by megapixels (1 MP = 1024×1024) and the ratio."""
-    width, height = parse_resolution(resolution_str)
-    mp = round(width * height / (1024 * 1024), 2)
-    if "9:16" in resolution_str:
-        ratio = "9:16"
-    elif "1:1" in resolution_str:
-        ratio = "1:1"
-    elif "4:3" in resolution_str:
-        ratio = "4:3"
-    else:
-        ratio = "16:9"
-    return ratio, mp
-
-
-# The Ref2VA Turbo LoRA at 4 steps leaves long-video shots undercooked (smeared, over-saturated
-# frames at 1280x720, soft ones at 480p); the H3LongVideos node itself asks for 6-8 with a turbo LoRA.
-LONG_TURBO_MIN_STEPS = 8
-
-def long_video_steps(mode):
-    turbo_lora, steps, _ = mode_settings(mode)
-    return max(steps, LONG_TURBO_MIN_STEPS) if turbo_lora else steps
-
-def build_smite_long_video_prompt(
-    prompt_text,
-    resolution_str,
-    segment_seconds,
-    seed,
-    mode=MODE_TURBO_LORA,
-    ref_image_name=None,
-    scheduler="simple",
-    text_encoder=H3_TEXT_ENCODER,
-    lora_name=None,
-    lora_strength=1.0,
-    ref2va_model=H3_REF2VA_MODEL,
-    plan_only=False
-):
-    """Build ComfyUI prompt graph for Smite79/MiniMax-H3-Longvideos architecture."""
-    workflow = {
-        "1": model_loader(ref2va_model),
-        "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": text_encoder, "type": "minimax"}},
-        "3": {"class_type": "VAELoader", "inputs": {"vae_name": video_vae()}},
-        "4": {"class_type": "VAELoader", "inputs": {"vae_name": H3_AUDIO_VAE}},
-    }
-    turbo_lora, _, _ = mode_settings(mode)
-    steps = long_video_steps(mode)
-    last_model = ["1", 0]
-    if turbo_lora:
-        workflow["5"] = {
-            "class_type": "LoraLoaderModelOnly",
-            "inputs": {
-                "model": last_model,
-                "lora_name": H3_REF2VA_LORA,
-                "strength_model": 1.0
-            }
-        }
-        last_model = ["5", 0]
-    last_model = add_user_lora(workflow, last_model, lora_name, lora_strength)
-
-    res_ratio, mp = long_video_ratio_mp(resolution_str)
-
-    h3_inputs = {
-        "model": last_model,
-        "clip": ["2", 0],
-        "vae": ["3", 0],
-        "audio_vae": ["4", 0],
-        "prompt": prompt_text,
-        "resolution": res_ratio,
-        "megapixels": mp,
-        "shot_seconds": float(segment_seconds or 10.0),
-        "steps": steps,
-        "sampler_name": "res_multistep",
-        "scheduler": scheduler or "simple",
-        "seed": int(seed),
-        "plan_only": bool(plan_only)
-    }
-
-    if ref_image_name:
-        workflow["7"] = {"class_type": "LoadImage", "inputs": {"image": ref_image_name}}
-        h3_inputs["ref_image_1"] = ["7", 0]
-
-    workflow["10"] = {
-        "class_type": "H3LongVideos",
-        "inputs": h3_inputs
-    }
-    workflow["20"] = {
-        "class_type": "CreateVideo",
-        "inputs": {
-            "images": ["10", 0],
-            "audio": ["10", 1],
-            "fps": 24.0
-        }
-    }
-    workflow["30"] = {
-        "class_type": "SaveVideo",
-        "inputs": {
-            "video": ["20", 0],
-            "filename_prefix": "video/H3_LongVideo",
-            "format": "auto"
-        }
-    }
-    return workflow
-
-def split_segment_prompts(text):
-    """Segments are split by a `---` line; without one, blank-line paragraphs (the Smite79 beat
-    style the tab asks for) are the segments, so switching engines keeps the same text working."""
-    separator = r"^\s*---+\s*$" if re.search(r"^\s*---+\s*$", text or "", flags=re.MULTILINE) else r"\n\s*\n"
-    return [part.strip() for part in re.split(separator, text or "", flags=re.MULTILINE) if part.strip()]
-
-def preview_long_plan(total_seconds, segment_seconds, segment_prompts_text):
-    prompts = split_segment_prompts(segment_prompts_text)
-    try:
-        windows = plan_long_segments(total_seconds, segment_seconds, LONG_OVERLAP_FRAMES, len(prompts))
-    except gr.Error as error:
-        return str(error)
-    rows = [f"| {i} | {s / 24:.2f}s → {e / 24:.2f}s | {e - s} 幀 |" for i, (s, e) in enumerate(windows, 1)]
-    source = f"依 {len(prompts)} 段分段提示詞" if prompts else "依總長度"
-    return (f"{source}：共 **{len(windows)} 段**，成片約 **{windows[-1][1] / 24:.1f} 秒**；"
-            f"段間重疊 {LONG_OVERLAP_FRAMES} 幀（{LONG_OVERLAP_FRAMES / 24:.2f} 秒）。\n\n"
-            "| 段 | 時間 | 長度 |\n|---|---|---|\n" + "\n".join(rows))
-
-def execute_long_generation(
-    global_prompt,
-    segment_prompts_text,
-    total_seconds,
-    segment_seconds,
-    resolution_str,
-    seed,
-    ref_image_file=None,
-    scheduler="simple",
-    mode=MODE_TURBO_LORA,
-    engine="Smite79 H3-LongVideos (推薦・次世代劇本分鏡長片)",
-    plan_only=False,
-    text_encoder=None,
-    lora_name=None,
-    lora_strength=1.0,
-    fl2va_model=None,
-    ref2va_model=None,
-    progress=gr.Progress()
-):
-    progress(0.05, desc="正在連線至 MiniMax H3 引擎...")
-    if not ensure_comfy_server():
-        raise gr.Error("無法啟動或連線至 ComfyUI 後端引擎，請檢查 8188 埠！")
-
-    model_options = resolve_model_options(text_encoder, lora_name, lora_strength, fl2va_model, ref2va_model)
-    target_ref2va_model = model_options["ref2va_model"] or H3_REF2VA_MODEL
-
-    if seed is None or seed == -1:
-        seed = random.randint(1, 1000000000000000)
-    seed = int(seed)
-
-    ref_image_name = upload_image(ref_image_file) if ref_image_file else None
-
-    # Determine which engine to use: Smite79 H3-LongVideos (Recommended) or TimelineDirector
-    use_smite = "smite" in (engine or "").lower() or "h3-longvideos" in (engine or "").lower()
-
-    if use_smite:
-        # Assemble Smite79 multi-shot prompt (Scene + Beats)
-        parts = []
-        if global_prompt and global_prompt.strip():
-            parts.append(global_prompt.strip())
-        if segment_prompts_text and segment_prompts_text.strip():
-            clean_segments = segment_prompts_text.replace("---", "\n\n").strip()
-            parts.append(clean_segments)
-
-        if not parts:
-            raise gr.Error("請輸入全域提示詞／劇本場景或分鏡提示詞！")
-
-        full_prompt = "\n\n".join(parts)
-
-        if "H3LongVideos" not in requests.get(f"{COMFY_URL}/object_info/H3LongVideos", timeout=10).json():
-            raise gr.Error(
-                "Smite79 長片引擎尚未安裝（它的授權不允許其他安裝程式代為下載，需自行安裝）。"
-                f"請到 {SMITE_REPO_URL} 下載，解壓到 ComfyUI\\custom_nodes\\ 後執行 restart_webui.bat；"
-                f"或把「長片生成系統架構」改選「{TIMELINE_ENGINE}」直接使用。")
-        check_generation_limits(target_ref2va_model, model_options["lora_name"], mode, False, 0, 0, 0, "ref2va")
-
-        _, long_mp = long_video_ratio_mp(resolution_str)
-        if long_mp >= LONG_HQ_MIN_MP:
-            if VRAM_GB is not None and VRAM_GB < LONG_HQ_MIN_VRAM_GB:
-                raise gr.Error(
-                    f"高畫質長片（約 {long_mp:g} MP）需要 24GB 級顯卡，這台偵測到 {VRAM_GB:.0f} GB。"
-                    "請改選 864×480 或 960×544，生成後再用「🔍 放大」SeedVR2 升解析度。")
-            shot_limit = 6 if long_mp >= 0.9 else 8
-            if float(segment_seconds or 10) > shot_limit:
-                gr.Warning(f"高畫質（約 {long_mp:g} MP）建議「每鏡頭目標秒數」≤ {shot_limit} 秒；"
-                           f"目前 {int(float(segment_seconds or 10))} 秒，顯存可能不足而中斷。")
-
-        progress(0.15, desc="正在建置 Smite79 H3-LongVideos 長片工作流...")
-        prompt_graph = build_smite_long_video_prompt(
-            prompt_text=full_prompt,
-            resolution_str=resolution_str,
-            segment_seconds=segment_seconds,
-            seed=seed,
-            mode=mode,
-            ref_image_name=ref_image_name,
-            scheduler=scheduler,
-            text_encoder=model_options["text_encoder"] or H3_TEXT_ENCODER,
-            lora_name=model_options["lora_name"],
-            lora_strength=model_options["lora_strength"],
-            ref2va_model=target_ref2va_model,
-            plan_only=plan_only
-        )
-
-        stage_desc = "分鏡劇本規劃 (Plan Only)" if plan_only else "長片連鎖採樣"
-        steps = long_video_steps(mode)
-        output_video_path = run_comfy_workflow(
-            prompt_graph,
-            steps if not plan_only else 1,
-            progress,
-            "正在載入模型並啟動 Smite79 H3-LongVideos 引擎...",
-            stage_desc,
-            output_node="30"
-        )
-
-        history.record("Smite79長片" + ("(PlanOnly)" if plan_only else ""),
-                       full_prompt, output_video_path,
-                       resolution=resolution_str, seconds=round(float(total_seconds or 30), 2),
-                       seed=seed, mode=mode if isinstance(mode, str) else None,
-                       scheduler=scheduler, model=target_ref2va_model,
-                       encoder=model_options["text_encoder"])
-        progress(1.0, desc="Smite79 長片生成完成！" if not plan_only else "分鏡規劃完成！")
-        return output_video_path
-
-    else:
-        # Fallback: TimelineDirector (舊版滑動視窗)
-        segment_prompts = split_segment_prompts(segment_prompts_text)
-        if not segment_prompts and not (global_prompt and global_prompt.strip()):
-            raise gr.Error("請輸入全域提示詞，或填寫分段提示詞！")
-        windows = plan_long_segments(total_seconds, segment_seconds, LONG_OVERLAP_FRAMES, len(segment_prompts))
-        # The long-video labels (e.g. 1280 × 720) are not all on H3's 32 px grid; Smite79 snaps itself.
-        width, height = (int(v / 32 + 0.5) * 32 for v in parse_resolution(resolution_str))
-        check_generation_limits(target_ref2va_model, model_options["lora_name"], mode, False, width, height, 0, "ref2va")
-
-        if ref_image_name:
-            prompts = segment_prompts or [global_prompt]
-            if not all("<picture" in p.lower() for p in prompts):
-                raise gr.Error("已上傳角色參考圖：每段提示詞（或全域提示詞）都要用 <Picture 1> 指定該角色。")
-
-        progress(0.15, desc=f"正在準備 {len(windows)} 段 TimelineDirector 圖譜...")
-        prompt_graph = build_long_video_prompt(
-            global_prompt=(global_prompt or "").strip(),
-            segment_prompts=segment_prompts,
-            windows=windows,
-            width=width,
-            height=height,
-            seed=seed,
-            ref_image_name=ref_image_name,
-            scheduler=scheduler,
-            mode=mode,
-            **model_options
-        )
-        output_video_path = run_comfy_workflow(
-            prompt_graph, mode_settings(mode)[1], progress,
-            "正在載入 Ref2VA 模型...", "長片採樣",
-            segments=len(windows),
-            output_node="41"
-        )
-        history.record("長片(TimelineDirector)", global_prompt or "\n---\n".join(segment_prompts), output_video_path,
-                       resolution=f"{width}×{height}", seconds=round(windows[-1][1] / 24, 2), seed=seed,
-                       mode=mode if isinstance(mode, str) else None, scheduler=scheduler,
-                       model=target_ref2va_model, encoder=model_options["text_encoder"])
-        progress(1.0, desc="長片生成完成！")
-        return output_video_path
-
-
 def is_krea2_model(name):
     """Krea2 is an image model (different architecture); keep it out of the H3 video menus."""
     return "krea2" in (name or "").lower()
@@ -1055,6 +677,8 @@ def model_label_choices(models):
         low = name.lower()
         if "singularity" in low:
             return f"🌟【Singularity 奇點】HDR動作微調 (推薦) — {name}"
+        if "10eros" in low:
+            return f"🔥【10Eros-Max 混合】內建 Turbo・8 步 — {name}"
         if "dasiwa" in low or "hybrid" in low:
             return f"⚡【DaSiwa 混合】8步內建蒸餾 — {name}"
         if "q4_k_m" in low or "-q4" in low:
@@ -1101,7 +725,7 @@ def check_generation_limits(model_name, lora_name, mode, hd, width, height, dura
             seconds = HD_MAX_PIXEL_SECONDS / (width * height)
             raise gr.Error(
                 f"{width}×{height} 的高清二次採樣最多約 {seconds:.0f} 秒，目前設定 {int(duration)} 秒會耗盡顯存。"
-                "請縮短長度、降低解析度，或改用「📼 長片」分頁分段生成。")
+                "請縮短長度或降低解析度。")
     lowered = (model_name or "").lower()
     if mode == MODE_TURBO_LORA and "turbo" in lowered:
         gr.Warning(f"「{model_name}」檔名顯示已內建蒸餾，建議採樣模式改選「{MODE_BAKED_TURBO}」；兩種蒸餾疊加會讓畫面變差。")
@@ -1639,6 +1263,10 @@ def run_comfy_workflow(prompt_graph, total_steps, progress, loading_desc, stage,
 
                 elif msg_type == "executed" and msg_data.get("node") == output_node:
                     output = msg_data.get("output", {})
+                    if output.get("text") and not (output.get("videos") or output.get("images")):
+                        # PreviewAny: a text result (the AI prompt assistant), not a file.
+                        ws.close()
+                        return "".join(output["text"])
                     files = output.get("videos") or output.get("images", [])
                     paths = [os.path.join(COMFY_DIR, "output", f.get("subfolder", ""), f.get("filename")) for f in files]
                     if paths:
@@ -1944,7 +1572,7 @@ def execute_lipsync(image, audio, prompt, resolution_str, mode, seed,
     # Multi-segment long video lip-sync (> SINGLE_SEGMENT_MAX_SECONDS)
     segments = plan_segment_durations(total_seconds, max_segment_seconds=12.0)
     total_segs = len(segments)
-    gr.Info(f"語音長度為 {total_seconds:.1f} 秒（超過 {int(SINGLE_SEGMENT_MAX_SECONDS)} 秒），已自動啟用原圖高解析錨定分段長片機制，共 {total_segs} 段連續生成...")
+    gr.Info(f"語音長度為 {total_seconds:.1f} 秒（超過 {int(SINGLE_SEGMENT_MAX_SECONDS)} 秒），已自動分段生成（每段都以原始人像為參考），共 {total_segs} 段連續生成...")
 
     segment_videos = []
     # 固定隨機種子，確保所有分段的角色面部特徵、光影風格與背景 100% 高度一致
@@ -1971,7 +1599,7 @@ def execute_lipsync(image, audio, prompt, resolution_str, mode, seed,
     concat_video = concat_video_segments(segment_videos)
     final_video = mux_original_audio(concat_video, audio, match_audio_length=True)
 
-    progress(1.0, desc="長片對嘴生成完成！")
+    progress(1.0, desc="長語音對嘴生成完成！")
     history.record("LipSync_Long", prompt, final_video,
                    seconds=round(media_duration(final_video), 2),
                    mode=mode if isinstance(mode, str) else None,
@@ -2305,7 +1933,7 @@ def add_prompt_picker(prompt_box):
                     "「🎬 分鏡導演」那一類是**給語言模型看的指令**，不是 H3 的提示詞，兩份接著用：\n"
                     "1. 「單圖擴展成 10–20 秒分鏡」：貼給會看圖的語言模型，連同一張參考圖，讓它產出分鏡表與九宮格分鏡圖。\n"
                     "2. 「多圖分鏡 → 連貫多段影片提示詞」：把分鏡圖交回語言模型，讓它逐段寫出鎖定同一人物、同一場景、同一時間軸的提示詞。\n"
-                    "3. 每段提示詞回到面板生成：單段用「FL2VA 首尾幀」或「Ref2VA」分頁；整條一次跑用「長片」分頁，分段提示詞以單獨一行 `---` 分隔。")
+                    "3. 每段提示詞回到面板生成：單段用「FL2VA 首尾幀」或「Ref2VA」分頁；要把多段剪成一支片，用「📝 編劇」分頁。")
         with gr.Row():
             replace = gr.Button("套用・取代提示詞", variant="secondary")
             append = gr.Button("加到提示詞末尾")
@@ -2327,48 +1955,186 @@ def add_prompt_picker(prompt_box):
         append.click(lambda c, t, p: apply_prompt_template(c, t, p, append=True), [category, template, prompt_box], [prompt_box], queue=False)
 
 
-def add_long_example_picker(segment_box):
-    """Long-video segment examples (建築/室內/人物) that fill the 分段提示詞 box directly."""
-    cats = list(LONG_VIDEO_EXAMPLES)
-    with gr.Accordion("📚 分段提示詞範例｜建築・室內・人物（30 秒～2 分鐘，用官方技巧）", open=True):
-        gr.Markdown(
-            "入門學習用：每個範例是多段提示詞，已用單獨一行 `---` 分好段。**選範例 → 套用**，就會填進上面的「分段提示詞」框，"
-            "把「每段秒數」保持在預設 10 秒，段數會決定總長度（3 段≈30 秒、6 段≈60 秒、12 段≈2 分鐘）。\n\n"
-            "這些範例示範官方 h3-prompt-writing 技巧：開頭寫風格與 `[Shot 1]`；運鏡用官方詞彙（Push In／Truck／Arc／Pedestal／Tilt "
-            "＋幅度＋速度）；聲音融進描述；畫面文字用英文雙引號；人物類用 `<Picture 1>` 綁定角色參考圖、台詞用 `(S1)`＋`<d>[English] …</d>`。"
-            "每段開頭都接續上一段的結尾，維持同一場景／同一角色。套用後可自行改寫學習。"
-        )
+# ✨ AI 專業提示詞: full Qwen3-VL checkpoints the panel already downloads for other tabs, best first.
+# The H3 encoder cannot write (it is cut to 50 layers and has no LM head). (file, CLIPLoader type)
+PROMPT_LLM_MODELS = [("qwen3vl_8b_int8_convrot.safetensors", "qwen_image"),   # 🖌️ 修圖 encoder
+                     ("qwen3vl_4b_fp8_scaled.safetensors", "krea2")]          # 🎨 圖片 encoder
+PROMPT_LLM_EXTRAS_OPTION = 7
+PROMPT_LLM_IMAGE_MP = 0.4   # keeps a phone photo from turning into ~10k vision tokens
+PROMPT_LLM_MAX_TOKENS = {pa.KIND_T2VA: 1200, pa.KIND_KEYFRAME: 1200, pa.KIND_IMAGE: 400}
+
+def prompt_llm_model():
+    available = {os.path.basename(f): f for f in list_model_files("text_encoders", "CLIPLoader", "clip_name")}
+    for name, clip_type in PROMPT_LLM_MODELS:
+        if name in available:
+            return resolve_backend_file("CLIPLoader", "clip_name", available[name], " AI 提示詞模型"), clip_type
+    raise gr.Error("尚未下載 AI 提示詞模型（Qwen3-VL）。" + extras_hint(PROMPT_LLM_EXTRAS_OPTION))
+
+def generate_pro_prompt(kind, idea, style_label, seconds=None, images=(), shots=None, shot_seconds=None,
+                        progress=gr.Progress()):
+    """Idea (+ pictures) -> official-format prompt text, written locally by Qwen3-VL."""
+    images = [path for path in images if path]
+    if not (idea or "").strip() and not images:
+        raise gr.Error("請先輸入一句想法（中文就可以），或附一張圖。")
+    if kind == pa.KIND_KEYFRAME and not images:
+        kind = pa.KIND_T2VA   # no first frame yet: write a plain text-to-video prompt
+    progress(0.05, desc="正在連線至 ComfyUI...")
+    if not ensure_comfy_server():
+        raise gr.Error("無法啟動或連線至 ComfyUI 後端引擎，請檢查 8188 埠！")
+    clip_name, clip_type = prompt_llm_model()
+    user = pa.build_user_message(kind, idea, pa.STYLE_CHOICES.get(style_label, ""), seconds=seconds or 5,
+                                 shots=shots, shot_seconds=shot_seconds, images=len(images))
+    max_tokens = PROMPT_LLM_MAX_TOKENS.get(kind) or 400 + 260 * int(shots or 5)
+    graph = {
+        "1": {"class_type": "CLIPLoader", "inputs": {"clip_name": clip_name, "type": clip_type}},
+        "2": {"class_type": "TextGenerate", "inputs": {
+            "clip": ["1", 0], "prompt": pa.chat_text(pa.SYSTEM_PROMPTS[kind], user, len(images)),
+            "max_length": max_tokens, "sampling_mode": "on", "sampling_mode.temperature": 0.6,
+            "sampling_mode.top_k": 40, "sampling_mode.top_p": 0.9, "sampling_mode.min_p": 0.05,
+            "sampling_mode.repetition_penalty": 1.05, "sampling_mode.seed": random.randint(0, 2 ** 31)}},
+        "3": {"class_type": "PreviewAny", "inputs": {"source": ["2", 0]}},
+    }
+    image_nodes = []
+    for index, path in enumerate(images[:2]):
+        graph[f"1{index}0"] = {"class_type": "LoadImage", "inputs": {"image": upload_files([path])[0]}}
+        graph[f"1{index}1"] = {"class_type": "ImageScaleToTotalPixels", "inputs": {
+            "image": [f"1{index}0", 0], "upscale_method": "area", "megapixels": PROMPT_LLM_IMAGE_MP, "resolution_steps": 1}}
+        image_nodes.append([f"1{index}1", 0])
+    if len(image_nodes) == 2:
+        graph["120"] = {"class_type": "ImageBatch", "inputs": {"image1": image_nodes[0], "image2": image_nodes[1]}}
+        graph["2"]["inputs"]["image"] = ["120", 0]
+    elif image_nodes:
+        graph["2"]["inputs"]["image"] = image_nodes[0]
+    text = pa.clean_output(run_comfy_workflow(graph, 0, progress, "正在載入 AI 提示詞模型...", "撰寫提示詞",
+                                              output_node="3"))
+    if kind in (pa.KIND_T2VA, pa.KIND_KEYFRAME) and "integrated_multimodal_description" not in text:
+        gr.Warning("AI 這次沒有寫成完整的官方三段格式，可以再按一次重寫。")
+    progress(1.0, desc="提示詞完成")
+    return text
+
+def add_prompt_assistant(kind, with_image=False, with_shots=False):
+    """The ✨ block shown above a tab's prompt box; wire it with wire_prompt_assistant once the tab's
+    duration / frame components exist."""
+    with gr.Accordion("✨ AI 專業提示詞：輸入一句話，自動寫成 MiniMax 官方格式（本機免費）", open=True):
+        idea = gr.Textbox(label="你的想法（一句話就可以，中文也行）", lines=2,
+                          placeholder={pa.KIND_KEYFRAME: "例如：她轉頭看向窗外，微笑著站起來（AI 會看上方的首幀／尾幀圖片來寫）",
+                                       pa.KIND_STORY: "例如：清晨的咖啡店，老闆娘開店、煮咖啡、迎接第一位客人",
+                                       pa.KIND_IMAGE: "例如：穿紅色洋裝的女子站在雨後的京都小巷"}.get(
+                              kind, "例如：雨夜的台北街頭，外送員停在便利商店前對店員說謝謝"))
         with gr.Row():
-            lcat = gr.Dropdown(label="分類", choices=cats, value=cats[0])
-            lname = gr.Dropdown(label="範例（可輸入關鍵字搜尋）", choices=list(LONG_VIDEO_EXAMPLES[cats[0]]), value=None)
-        lprev = gr.Textbox(label="範例預覽（每段以 --- 分隔）", lines=10, max_lines=24, interactive=False)
-        lapply = gr.Button("套用到「分段提示詞」", variant="secondary")
-        lcat.change(lambda c: (gr.Dropdown(choices=list(LONG_VIDEO_EXAMPLES.get(c, {})), value=None), ""),
-                    [lcat], [lname, lprev], queue=False)
-        lname.change(lambda c, n: LONG_VIDEO_EXAMPLES.get(c, {}).get(n, ""), [lcat, lname], [lprev], queue=False)
-        lapply.click(lambda c, n: LONG_VIDEO_EXAMPLES.get(c, {}).get(n, ""), [lcat, lname], [segment_box], queue=False)
+            style = gr.Dropdown(label="畫面風格", choices=list(pa.STYLE_CHOICES), value=next(iter(pa.STYLE_CHOICES)), scale=2)
+            image = gr.Image(label="參考圖（選填，AI 會看圖來寫 · 支援 Ctrl+V）", type="filepath", height=140,
+                             elem_classes=["clipboard-image-target"], scale=2) if with_image else None
+            shots = gr.Slider(label="鏡頭數", minimum=2, maximum=12, value=5, step=1, scale=2) if with_shots else None
+        with gr.Row():
+            button = gr.Button("✨ 生成專業提示詞", variant="secondary", scale=1, min_width=180)
+            status = gr.Markdown("按下後約 10～60 秒完成，會直接填進下面的提示詞欄；不滿意可以再按一次重寫。")
+    return {"kind": kind, "idea": idea, "style": style, "image": image, "shots": shots, "button": button, "status": status}
+
+def wire_prompt_assistant(ui, targets, seconds=None, frames=(), story_seconds=None):
+    kind = ui["kind"]
+    extra = [c for c in (seconds, ui["image"], *frames, ui["shots"], story_seconds) if c is not None]
+
+    # No gr.Progress here: Gradio cannot inject it after *values; the status line and spinner cover it.
+    def run(idea, style, *values):
+        progress = lambda *a, **k: None
+        values = list(values)
+        take = lambda component: values.pop(0) if component is not None else None
+        sec, img = take(seconds), take(ui["image"])
+        frame_paths = [take(frame) for frame in frames]
+        shot_count, story_sec = take(ui["shots"]), take(story_seconds)
+        text = generate_pro_prompt(kind, idea, style, seconds=sec, images=[img, *frame_paths],
+                                   shots=shot_count, shot_seconds=story_sec or 4, progress=progress)
+        if kind == pa.KIND_STORY:
+            setting, story = pa.split_story(text)
+            if not story:
+                raise gr.Error("AI 這次沒有寫出「畫面｜運鏡｜聲音」格式的鏡頭，請再按一次。")
+            return setting, story, "✅ 已填入「共同設定」與「故事」，按 ① 拆成分鏡表即可。"
+        return text, "✅ 已填入提示詞欄，可以直接生成或再修改。"
+
+    ui["button"].click(run, [ui["idea"], ui["style"], *extra], [*targets, ui["status"]])
+
+STORY_DEFAULT_CAMERA = "電影感中景，平穩運鏡"
+STORY_DEFAULT_SOUND = "環境音與情緒配樂"
 
 def plan_storyboard(story, seconds_per_shot=4):
+    """One shot per line written as 畫面｜運鏡｜聲音 (the templates' format); plain prose is split
+    into one shot per sentence with a default camera and sound."""
     if not story or not story.strip():
-        raise gr.Error("請先輸入故事內容！")
-    parts = [x.strip() for x in re.split(r"(?<=[。！？!?])\s*|\n+", story) if x.strip()]
-    return [[i, f"鏡頭 {i}", text, "電影感中景，平穩運鏡", int(seconds_per_shot), "環境音與情緒配樂"]
-            for i, text in enumerate(parts[:30], 1)]
+        raise gr.Error("請先輸入故事內容，或在上方選一個範本按「套用範本」！")
+    lines = [line.strip() for line in story.splitlines() if line.strip()]
+    rows = []
+    if any("｜" in line or "|" in line for line in lines):
+        for line in lines:
+            fields = [field.strip() for field in re.split(r"[｜|]", line)]
+            rows.append((fields[0], fields[1] if len(fields) > 1 and fields[1] else STORY_DEFAULT_CAMERA,
+                         fields[2] if len(fields) > 2 and fields[2] else STORY_DEFAULT_SOUND))
+    else:
+        parts = [x.strip() for x in re.split(r"(?<=[。！？!?])\s*|\n+", story) if x.strip()]
+        rows = [(text, STORY_DEFAULT_CAMERA, STORY_DEFAULT_SOUND) for text in parts]
+    return [[i, f"鏡頭 {i}", text, camera, int(seconds_per_shot), sound]
+            for i, (text, camera, sound) in enumerate(rows[:30], 1)]
+
+STORY_IMAGE_MODES = {
+    "person": "👤 人物參考：圖中的人出演每個鏡頭（最多 3 張）",
+    "scene": "🏠 場景參考：每個鏡頭都照圖中的建築／空間（最多 3 張）",
+    "first_frame": "🖼️ 逐鏡開場：第 N 張圖當第 N 個鏡頭的第一個畫面",
+}
+STORY_REF_MAX_IMAGES = 3
+
+def story_template_names(category):
+    return list(STORY_TEMPLATES.get(category, {}))
+
+def apply_story_template(category, name, seconds_per_shot):
+    template = STORY_TEMPLATES.get(category, {}).get(name)
+    if not template:
+        raise gr.Error("請先選一個範本。")
+    mode = STORY_IMAGE_MODES.get(template.get("image_mode"))
+    tip = f"💡 {template['tip']}" if template.get("tip") else ""
+    return (template["setting"], template["story"], plan_storyboard(template["story"], seconds_per_shot),
+            gr.Radio(value=mode) if mode else gr.Radio(), tip)
+
+def story_reference_line(image_mode, count):
+    """Ref2VA needs every picture named in the prompt; say what the pictures are for."""
+    labels = "、".join(f"<Picture {i}>" for i in range(1, count + 1))
+    if image_mode == STORY_IMAGE_MODES["person"]:
+        return (f"{labels} 是主角的外貌參考：每個鏡頭裡的人物都是 {labels} 中的同一個人，"
+                "保持相同的臉孔、髮型與服裝。")
+    return f"{labels} 是場景參考：畫面中的建築與空間和 {labels} 一致，保持相同的造型、材質、配色與擺設。"
 
 def render_storyboard(rows, resolution, turbo, text_encoder=None, lora_name=None, lora_strength=1.0,
-                     fl2va_model=None, ref2va_model=None, progress=gr.Progress()):
+                     fl2va_model=None, ref2va_model=None, setting="", images=None, image_mode=None,
+                     progress=gr.Progress()):
     if hasattr(rows, "values"):
         rows = rows.values.tolist()
     rows = [r for r in (rows or []) if len(r) >= 6 and str(r[2]).strip()]
     if not rows:
         raise gr.Error("請先建立分鏡表！")
+    images = [path for path in (images or []) if path]
+    first_frames = images if image_mode == STORY_IMAGE_MODES["first_frame"] else []
+    references = [] if first_frames else images
+    if len(references) > STORY_REF_MAX_IMAGES:
+        gr.Warning(f"參考圖只會用前 {STORY_REF_MAX_IMAGES} 張。")
+        references = references[:STORY_REF_MAX_IMAGES]
+    if first_frames and len(first_frames) < len(rows):
+        gr.Info(f"上傳了 {len(first_frames)} 張圖、{len(rows)} 個鏡頭：沒有圖的鏡頭會只用文字生成。")
     clips = []
     for i, row in enumerate(rows):
         progress(i / len(rows), desc=f"正在渲染鏡頭 {i+1}/{len(rows)}")
-        prompt = f"{row[2]}。鏡頭：{row[3]}。聲音：{row[5]}。保持角色外觀一致，不要字幕、文字或浮水印。"
-        clips.append(execute_generation(prompt, resolution, int(row[4]), turbo, -1,
-                                        text_encoder=text_encoder, lora_name=lora_name, lora_strength=lora_strength,
-                                        fl2va_model=fl2va_model, ref2va_model=ref2va_model))
+        # Every shot is generated on its own, so the shared setting (style, place, character look)
+        # is repeated in each prompt to keep the clips looking like one film.
+        shot = f"{str(row[2]).rstrip('。')}。鏡頭：{row[3]}。聲音：{row[5]}。保持角色外觀一致，不要字幕、文字或浮水印。"
+        parts = [(setting or "").strip(), story_reference_line(image_mode, len(references)) if references else "", shot]
+        prompt = "\n\n".join(part for part in parts if part)
+        shared = dict(text_encoder=text_encoder, lora_name=lora_name, lora_strength=lora_strength,
+                      fl2va_model=fl2va_model, ref2va_model=ref2va_model)
+        if references:
+            # Ref2VA carries the same person / place into every shot from the pictures.
+            clips.append(execute_ref_generation(prompt, resolution, int(row[4]), turbo, -1,
+                                                image_files=references, warn_missing=False, **shared))
+        else:
+            first = first_frames[i] if i < len(first_frames) else None
+            clips.append(execute_generation(prompt, resolution, int(row[4]), turbo, -1, first_frame_file=first, **shared))
     import imageio_ffmpeg
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     output = os.path.join(COMFY_DIR, "output", f"AI_Studio_{int(time.time())}.mp4")
@@ -2521,7 +2287,7 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
             model_fl2va = gr.Dropdown(label="FL2VA 擴散模型（文生／首尾幀／3D 攝影機／編劇）",
                                       choices=model_label_choices(fl2va_models),
                                       value=krea2_default(fl2va_models, H3_FL2VA_MODEL))
-            model_ref2va = gr.Dropdown(label="Ref2VA 擴散模型（參考影音／長片）",
+            model_ref2va = gr.Dropdown(label="Ref2VA 擴散模型（參考影音／V2V／對嘴）",
                                        choices=model_label_choices(ref2va_models),
                                        value=krea2_default(ref2va_models, H3_REF2VA_MODEL))
         model_refresh.click(refresh_model_choices, None, [model_encoder, model_fl2va, model_ref2va], queue=False)
@@ -2536,6 +2302,7 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                         placeholder="詳細描述畫面、鏡頭動作與聲音效果，例如：\n電影級預告片：雨後的賽博朋克夜都市，主角身穿風衣在摩天大樓天台奔跑跳躍，背後是呼嘯而過的飛行車輛與霓虹光影。\n聲音：急促腳步聲、呼嘯風聲、遠處都市氛圍、震撼的電影低音音效。",
                         lines=5
                     )
+                    t2v_assist = add_prompt_assistant(pa.KIND_T2VA, with_image=True)
                     add_prompt_picker(t2v_prompt)
                     add_base_prompt_builder(t2v_prompt)
                     with gr.Row():
@@ -2550,6 +2317,7 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                     with gr.Row():
                         t2v_turbo = gr.Dropdown(label="🚀 採樣模式", choices=SAMPLING_MODES, value=MODE_TURBO_LORA)
                         t2v_seed = gr.Number(label="隨機種子 (-1 為隨機)", value=-1, precision=0)
+                    wire_prompt_assistant(t2v_assist, [t2v_prompt], seconds=t2v_duration)
                     t2v_hd = gr.Checkbox(label=HD_LABEL, info=HD_INFO if HD_ALLOWED else HD_LOW_VRAM_INFO, value=False, interactive=HD_ALLOWED)
 
                     t2v_btn = gr.Button("🎬 開始生成影音 (Generate Video & Audio)", variant="primary", size="lg")
@@ -2575,6 +2343,7 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                         placeholder="描述圖片中人物或場景如何運動，以及所搭配的聲音或音效...",
                         lines=3
                     )
+                    i2v_assist = add_prompt_assistant(pa.KIND_KEYFRAME)
                     add_prompt_picker(i2v_prompt)
                     add_base_prompt_builder(i2v_prompt)
                     i2v_instruction = gr.Checkbox(
@@ -2586,6 +2355,7 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                     with gr.Row():
                         i2v_turbo = gr.Dropdown(label="🚀 採樣模式", choices=SAMPLING_MODES, value=MODE_TURBO_LORA)
                         i2v_seed = gr.Number(label="隨機種子 (-1 為隨機)", value=-1, precision=0)
+                    wire_prompt_assistant(i2v_assist, [i2v_prompt], seconds=i2v_duration, frames=(i2v_first, i2v_last))
                     i2v_hd = gr.Checkbox(label=HD_LABEL, info=HD_INFO if HD_ALLOWED else HD_LOW_VRAM_INFO, value=False, interactive=HD_ALLOWED)
 
                     i2v_btn = gr.Button("🎬 生成首尾幀影音", variant="primary", size="lg")
@@ -2681,7 +2451,7 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                 "- 🌟 **HDR 畫質重塑與動作增強**（`Singularity` 奇點微調模型專精：大幅消除運動模糊、去油光、強化武俠打鬥打擊感與特效）\n"
                 "- 🏙️ **動作保留 + 背景場景變換**（人物動作原樣保留，將背景環境變換為賽博龐克、奇幻森林、雨夜等）\n"
                 "- 🎨 **動漫 / 奇幻風格重塑**（保留肢體動作，重繪為二次元或魔幻特效風格）\n"
-                "- ⏳ **超長影片自動分段長片**：約 15~16 秒以內單段極速重塑（如 15.1 秒影片不分段直接完成）；超過 16 秒系統會**自動分段處理**，每段始終錨定原版參考素材以杜絕迭代畫質衰退與暗斑，最後自動無縫合成完整影片並還原原音！"
+                "- ⏳ **超長影片自動分段**：約 15~16 秒以內單段極速重塑（如 15.1 秒影片不分段直接完成）；超過 16 秒系統會**自動分段處理**，每段始終錨定原版參考素材以杜絕迭代畫質衰退與暗斑，最後自動無縫合成完整影片並還原原音！"
             )
             with gr.Row():
                 with gr.Column(scale=5):
@@ -2718,7 +2488,7 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                             value=next(iter(AUTO_RESOLUTION_CHOICES))
                         )
                     with gr.Row():
-                        v2v_auto_duration = gr.Checkbox(label="⚡ 自動處理整支影片（超過 16 秒自動分段長片）", value=True)
+                        v2v_auto_duration = gr.Checkbox(label="⚡ 自動處理整支影片（超過 16 秒自動分段）", value=True)
                         v2v_video_audio = gr.Checkbox(label="保留來源影片原音軌", value=True)
                         v2v_duration = gr.Slider(label="指定秒數（未勾選整支時生效）", minimum=4, maximum=60, value=5, step=1)
                     with gr.Row():
@@ -2777,7 +2547,7 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                 "最簡單的對嘴：上傳一張人像照當 `<Picture 1>`、一段語音當 `<Audio 1>`，按生成。"
                 "用的是 Ref2VA（跟「參考」分頁同一個模型），音檔會**鎖進生成過程讓嘴型對上**，成片再換回原始音檔。\n\n"
                 "- **不是傳統 Wav2Lip**：H3 會整段重新生成，臉孔、背景會盡量貼近原圖但非逐像素不變；提示詞已內建「保持場景、只動嘴」。\n"
-                "- ⏳ **超長語音自動分段長片**：約 15~16 秒以內單段極速生成；語音長度**若超過 16 秒會自動分段連續生成**（每段約 10~12 秒），**各段全程以原始高解析人像照片為錨定參考**（徹底杜絕截取上一段末幀造成 VAE 迭代失真、變黑與雜色噪點問題！），最後自動無縫拼接並還原完整原音！\n"
+                "- ⏳ **超長語音自動分段**：約 15~16 秒以內單段極速生成；語音長度**若超過 16 秒會自動分段連續生成**（每段約 10~12 秒），**各段全程以原始高解析人像照片為錨定參考**（徹底杜絕截取上一段末幀造成 VAE 迭代失真、變黑與雜色噪點問題！），最後自動無縫拼接並還原完整原音！\n"
                 "- 正面、清晰、單人、嘴部沒被遮住的人像效果最好。語音建議乾淨人聲。"
             )
             with gr.Row():
@@ -2806,88 +2576,6 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                 inputs=[lip_image, lip_audio, lip_prompt, lip_res, lip_mode, lip_seed, *model_inputs],
                 outputs=[lip_output]
             )
-
-        with gr.Tab("📼 長片"):
-            gr.Markdown(
-                "### 🎬 Smite79 H3-LongVideos 劇本分鏡連續長片（至多 120 秒）\n"
-                "已升級改用 **[Smite79/MiniMax-H3-Longvideos](https://huggingface.co/Smite79/MiniMax-H3-Longvideos)** 官方推薦架構！"
-                "單一提示詞／劇本分鏡直出連續影音，內建角色記憶、對白識別、鏡頭銜接與同步立體聲。\n\n"
-                "- **劇本提示詞格式（推薦寫法）**：\n"
-                "  - **第一段為「場景與環境（Scene）」**：設定全片的光影、色調、時間、地點與攝影風格（自動作為各鏡頭基底）。\n"
-                "  - **後續各段為「分鏡動作（Beats）」**：每段代表一個鏡頭（段落之間請空一行）。\n"
-                "  - **對白標記**：台詞請加雙引號，例如：`Mara 走過來問他：\"還有最後一個嗎？\"`\n"
-                "  - **角色設定（Character Sheet）**：可在段落中定義 `女主: <Picture 1>, 25, she, 黑色風衣...`，多鏡頭角色特徵始終一致。\n"
-                "  - **原字不漏指令**：若有特定動作不可被壓縮，可在該行前加上 `exact:`（例如：`exact: 雙手始終背在身後`）。\n"
-                "- **全域提示詞**：若只填寫全域提示詞（如單一場景或連續運鏡），系統會依每段目標秒數自動連貫生成。"
-            )
-            with gr.Row():
-                with gr.Column(scale=5):
-                    smite_ready = smite_node_installed()
-                    long_engine = gr.Dropdown(
-                        label="🎬 長片生成系統架構",
-                        choices=[SMITE_ENGINE, TIMELINE_ENGINE],
-                        value=SMITE_ENGINE if smite_ready else TIMELINE_ENGINE,
-                        info=("預設為 Smite79 次世代系統，支援人物記憶、對白識別與多鏡頭音影連貫。" if smite_ready else
-                              "尚未安裝 Smite79 引擎，已改用 TimelineDirector（分段提示詞以單獨一行 --- 分隔）。"
-                              f"想用 Smite79 請自行從 {SMITE_REPO_URL} 下載到 ComfyUI\\custom_nodes\\ 後重啟。")
-                    )
-                    long_prompt = gr.Textbox(
-                        label="全域提示詞／劇本場景設定（Scene 氛圍）",
-                        lines=5,
-                        placeholder="第一段描述全片場景、環境光影、時間地點與攝影質感；亦可直接在此輸入完整多段劇本..."
-                    )
-                    add_prompt_picker(long_prompt)
-                    long_segment_prompts = gr.Textbox(
-                        label="分鏡劇本（Beats，每段一鏡頭，段落間空一行）",
-                        lines=8,
-                        placeholder="鏡頭 1：女主從病房脫身，警惕地觀察走廊四周。\n\n鏡頭 2：女主蹲行躲在布草車後方，護士推車經過護士站。\n\n鏡頭 3：女主坐上輪椅進入電梯，電梯門關閉。"
-                    )
-                    add_long_example_picker(long_segment_prompts)
-                    long_ref = gr.Image(label="角色參考圖（選填，提示詞用 <Picture 1> · 支援 Ctrl+V 貼上）", type="filepath", height=300, elem_classes=["clipboard-image-target"])
-                    with gr.Row():
-                        long_segment = gr.Slider(label="每鏡頭目標秒數 (Shot Seconds)", minimum=5, maximum=15, value=10, step=1)
-                        long_total = gr.Slider(label="預估總長度（秒）", minimum=10, maximum=120, value=30, step=1)
-                    with gr.Row():
-                        long_res_choices = [r for r in LONG_VIDEO_RESOLUTIONS
-                                            if not (LOW_VRAM and long_video_ratio_mp(r)[1] >= LONG_HQ_MIN_MP)]
-                        long_res = gr.Dropdown(
-                            label="畫面解析度",
-                            choices=long_res_choices,
-                            value=long_res_choices[0],
-                            info=(f"這台 {VRAM_GB:.0f} GB 顯存只列出省顯存的解析度；要更清楚，生成後用「🔍 放大」。" if LOW_VRAM else
-                                  "高畫質選項更清楚但更慢、更吃顯存（需 24GB），請搭配較短的每鏡秒數；"
-                                  "採樣模式選「非蒸餾・20 步」細節最好。")
-                        )
-                        long_seed = gr.Number(label="隨機種子 (-1 為隨機)", value=-1, precision=0)
-                        long_scheduler = gr.Dropdown(label="採樣排程", choices=SCHEDULERS, value="simple", info=SCHEDULER_INFO)
-                    long_mode = gr.Dropdown(label="採樣模式", choices=SAMPLING_MODES, value=MODE_TURBO_LORA,
-                                            info=f"長片的 Turbo LoRA 會自動用 {LONG_TURBO_MIN_STEPS} 步（4 步在長片會糊、高畫質會花掉）。")
-                    long_plan = gr.Markdown(preview_long_plan(30, 10, ""))
-                    with gr.Row():
-                        long_plan_btn = gr.Button("📋 先預覽分鏡劇本規劃 (Plan Only・不消耗顯存)", variant="secondary", scale=2)
-                        long_btn = gr.Button("🎬 開始生成長片影音", variant="primary", size="lg", scale=3)
-                with gr.Column(scale=5):
-                    long_output = gr.Video(label="長片輸出預覽", interactive=False, height=520)
-            for control in (long_total, long_segment, long_segment_prompts):
-                control.change(preview_long_plan, [long_total, long_segment, long_segment_prompts], long_plan, queue=False)
-            long_btn.click(
-                fn=lambda p, sp, tot, seg, r, s, img, sch, md, eng, enc, fl2, r2v: execute_long_generation(
-                    p, sp, tot, seg, r, s, ref_image_file=img, scheduler=sch, mode=md, engine=eng, plan_only=False,
-                    text_encoder=enc, fl2va_model=fl2, ref2va_model=r2v
-                ),
-                inputs=[long_prompt, long_segment_prompts, long_total, long_segment, long_res, long_seed, long_ref, long_scheduler, long_mode, long_engine, *model_inputs],
-                outputs=[long_output]
-            )
-            long_plan_btn.click(
-                fn=lambda p, sp, tot, seg, r, s, img, sch, md, eng, enc, fl2, r2v: execute_long_generation(
-                    p, sp, tot, seg, r, s, ref_image_file=img, scheduler=sch, mode=md, engine=eng, plan_only=True,
-                    text_encoder=enc, fl2va_model=fl2, ref2va_model=r2v
-                ),
-                inputs=[long_prompt, long_segment_prompts, long_total, long_segment, long_res, long_seed, long_ref, long_scheduler, long_mode, long_engine, *model_inputs],
-                outputs=[long_output]
-            )
-            gr.Markdown("[長片核心架構：Smite79 / MiniMax-H3-Longvideos](https://huggingface.co/Smite79/MiniMax-H3-Longvideos) · 支援劇本鏡頭導演、角色記憶與多鏡頭音畫連貫。亦支援舊版 TimelineDirector 滑動視窗。")
-
 
         with gr.Tab("🔍 放大"):
             gr.Markdown("### 用 SeedVR2 把現成影片放大\n"
@@ -2943,6 +2631,8 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                     krea_prompt = gr.Textbox(
                         label="提示詞 (Prompt)", lines=5,
                         placeholder="輸入你想生成的畫面描述（支援英文自然語言或標籤，例如：A stunning 25-year-old Japanese woman, elegant face, luxury penthouse, night, city lights, photorealistic, 8k）")
+                    krea_assist = add_prompt_assistant(pa.KIND_IMAGE, with_image=True)
+                    wire_prompt_assistant(krea_assist, [krea_prompt])
                     add_prompt_picker(krea_prompt)
                     with gr.Row():
                         krea_size = gr.Dropdown(label="尺寸", choices=KREA2_SIZES, value=KREA2_SIZES[1])
@@ -3189,21 +2879,61 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
             gr.Markdown("[工具來源：NyckM / 3d-Camera-control-H3-Minimax](https://github.com/NyckM/3d-Camera-control-H3-Minimax) · 原生 ComfyUI 中亦可搜尋 `bruxosdovfx Camera H3` 節點。")
 
         with gr.Tab("📝 編劇"):
-            gr.Markdown("### 故事 → 分鏡 → 批次渲染 → 自動剪接")
-            story_text = gr.Textbox(label="故事／劇本", lines=10, placeholder="貼上故事內容，每個段落或句子會成為可編輯鏡頭。")
+            gr.Markdown(
+                "### 故事 → 分鏡 → 批次渲染 → 自動剪接\n"
+                "**不知道寫什麼？** 在下面選一個範本按「套用範本」，分鏡表會直接填好，再按 **②** 就能生成一支短片。\n\n"
+                "1. **全片共同設定**：風格、場景、光線、人物外觀。每個鏡頭都會加上這段，讓各鏡看起來像同一部片。\n"
+                "2. **故事**：每一行是一個鏡頭，格式是 `畫面內容｜運鏡｜聲音`（只寫畫面也可以，會用預設運鏡與聲音）。\n"
+                "3. 按 **①** 拆成分鏡表，可以直接在表格裡改字或秒數；按 **②** 逐鏡生成並自動剪成一支影片。\n\n"
+                "每個鏡頭是分開生成的，只靠文字時人物長相可能每鏡略有差異；要全片同一個人，在「附加圖片」上傳人像並選「人物參考」。"
+                "5 個鏡頭 × 4 秒在 864×480 約需 5～10 分鐘。")
+            story_cats = list(STORY_TEMPLATES)
+            with gr.Row():
+                story_cat = gr.Dropdown(label="範本分類", choices=story_cats, value=story_cats[0], scale=2)
+                story_tpl = gr.Dropdown(label="範本", choices=story_template_names(story_cats[0]),
+                                        value=story_template_names(story_cats[0])[0], scale=3)
+                story_apply = gr.Button("📋 套用範本", variant="secondary", scale=1, min_width=120)
+            story_tip = gr.Markdown("")
+            story_assist = add_prompt_assistant(pa.KIND_STORY, with_shots=True)
+            with gr.Accordion("🖼️ 附加圖片（選填）：人物照、建築／空間照，或每個鏡頭的開場畫面", open=True):
+                with gr.Row():
+                    story_images = gr.File(label="附加圖片（可多張，依上傳順序為第 1、2、3… 張 · 支援 Ctrl+V 貼上）",
+                                           file_count="multiple", file_types=["image"], type="filepath",
+                                           elem_classes=["clipboard-image-target"], scale=3)
+                    story_image_mode = gr.Radio(label="圖片用途", choices=list(STORY_IMAGE_MODES.values()),
+                                                value=STORY_IMAGE_MODES["person"], scale=2)
+                story_image_preview = gr.Gallery(label="附加圖片預覽", columns=6, height=150, allow_preview=True)
+                gr.Markdown("- **人物參考**：上傳同一個人的照片，每個鏡頭都由這個人出演（臉孔最一致）。\n"
+                            "- **場景參考**：上傳建築、庭園或室內照片，每個鏡頭都照這個空間生成。\n"
+                            "- **逐鏡開場**：照片依序變成每個鏡頭的第一個畫面再動起來，適合房屋實景照片做成帶看影片。")
+            story_setting = gr.Textbox(label="全片共同設定（每個鏡頭都會加上，選填）", lines=3,
+                                       placeholder="例如：寫實電影風格。主角是同一位虛構女子：約 25 歲，黑色長髮，穿米白色洋裝。場景是海邊小鎮，黃昏暖光。")
+            story_text = gr.Textbox(label="故事／劇本（每行一個鏡頭：畫面內容｜運鏡｜聲音）", lines=10,
+                                    placeholder="她推開咖啡店的門走進來｜中景緩慢推近｜門鈴聲、店內輕音樂\n"
+                                                "她在窗邊坐下，望向窗外的街道｜側面近景，緩慢橫移｜街道人聲、雨聲\n"
+                                                "（也可以直接貼一段故事，每句話會變成一個鏡頭）")
             with gr.Row():
                 story_seconds = gr.Slider(label="每鏡秒數", minimum=4, maximum=15, value=4, step=1)
                 story_res = gr.Dropdown(label="渲染解析度", choices=BASE_RES_CHOICES[:2], value=DEFAULT_RES)
                 story_turbo = gr.Dropdown(label="採樣模式", choices=SAMPLING_MODES, value=MODE_TURBO_LORA)
+            wire_prompt_assistant(story_assist, [story_setting, story_text], story_seconds=story_seconds)
             plan_btn = gr.Button("① 自動拆分分鏡", variant="secondary")
             shot_table = gr.Dataframe(headers=["序號", "鏡頭名", "畫面內容", "運鏡", "秒數", "聲音／配樂"], datatype=["number", "str", "str", "str", "number", "str"], interactive=True, wrap=True)
             render_btn = gr.Button("② 批次渲染並自動剪接", variant="primary", size="lg")
             studio_output = gr.Video(label="完整成片", interactive=False, height=520)
+            story_cat.change(lambda c: gr.Dropdown(choices=story_template_names(c), value=story_template_names(c)[0]),
+                             [story_cat], [story_tpl], queue=False)
+            story_apply.click(apply_story_template, [story_cat, story_tpl, story_seconds],
+                              [story_setting, story_text, shot_table, story_image_mode, story_tip], queue=False)
+            story_images.change(lambda files: [(f, f"第 {i} 張") for i, f in enumerate(files or [], 1)],
+                                [story_images], [story_image_preview], queue=False)
             plan_btn.click(plan_storyboard, [story_text, story_seconds], shot_table)
             render_btn.click(
-                lambda rows, r, tb, enc, fl2, r2v: render_storyboard(
-                    rows, r, tb, text_encoder=enc, fl2va_model=fl2, ref2va_model=r2v),
-                [shot_table, story_res, story_turbo, *model_inputs], studio_output)
+                lambda rows, r, tb, st, imgs, im, enc, fl2, r2v: render_storyboard(
+                    rows, r, tb, text_encoder=enc, fl2va_model=fl2, ref2va_model=r2v, setting=st,
+                    images=imgs, image_mode=im),
+                [shot_table, story_res, story_turbo, story_setting, story_images, story_image_mode, *model_inputs],
+                studio_output)
         with gr.Tab("📜 紀錄"):
             gr.Markdown("歷史紀錄已自動分類為 **🖼️ 圖片紀錄** 與 **🎬 影片紀錄**。點選縮圖即可預覽成品、查看提示詞與完整設定，並支援一鍵套用與刪除紀錄。")
             with gr.Tabs():
@@ -3249,7 +2979,6 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                                 apply_vid_t2v = gr.Button("📋 套用到 🎬 文生")
                                 apply_vid_i2v = gr.Button("📋 套用到 🖼️ 首尾幀")
                                 apply_vid_ref = gr.Button("📋 套用到 🎞️ 參考")
-                                apply_vid_long = gr.Button("📋 套用到 📼 長片")
                             vid_hist_seed_note = gr.Markdown("")
                             vid_hist_details = gr.Markdown("")
                         with gr.Column(scale=5):
@@ -3343,7 +3072,6 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
             apply_vid_t2v.click(lambda t: t, vid_hist_prompt, t2v_prompt, queue=False)
             apply_vid_i2v.click(lambda t: t, vid_hist_prompt, i2v_prompt, queue=False)
             apply_vid_ref.click(lambda t: t, vid_hist_prompt, ref_prompt, queue=False)
-            apply_vid_long.click(lambda t: t, vid_hist_prompt, long_prompt, queue=False)
 
             demo.load(load_img_history, None, [img_hist_rows, img_hist_gallery, img_hist_count, img_selected_idx, img_hist_prompt, img_hist_output, img_hist_details, img_hist_seed_note])
             demo.load(load_vid_history, None, [vid_hist_rows, vid_hist_gallery, vid_hist_count, vid_selected_idx, vid_hist_prompt, vid_hist_output, vid_hist_details, vid_hist_seed_note])
@@ -3355,8 +3083,8 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                 f"也會依顯存自動關閉跑不動的選項，不用自己設定：\n\n"
                 f"> **本機：{GPU_NAME or '未偵測到 NVIDIA 顯卡'} · {VRAM_PROFILE_LABEL}**\n\n"
                 "| 顯存 | 建議用法 | 自動調整 |\n|---|---|---|\n"
-                "| **24～32 GB**（4090／5090／3090） | 全部功能；高清二次採樣、長片高畫質 | — |\n"
-                "| **16 GB**（4080／5080／4070 Ti S） | Q4 模型、864×480～960×544、4～10 秒 | 關閉高清二次採樣與 Full HD、長片只列省顯存解析度、SeedVR2 轉 8 區塊到 CPU |\n"
+                "| **24～32 GB**（4090／5090／3090） | 全部功能，含高清二次採樣與 Full HD | — |\n"
+                "| **16 GB**（4080／5080／4070 Ti S） | Q4 模型、864×480～960×544、4～10 秒 | 關閉高清二次採樣與 Full HD、SeedVR2 轉 8 區塊到 CPU |\n"
                 "| **12 GB**（4070／3060 12G） | Q4 模型、864×480、4～6 秒 | 同上，SeedVR2 轉 16 區塊到 CPU |\n\n"
                 "- 顯存較小時，要更清楚的成片：先用 864×480 生成，再到「🔍 放大」用 SeedVR2 升到 1080p。\n"
                 "- 系統記憶體（RAM）建議 **32 GB 以上**，12～16 GB 顯卡建議 **64 GB**；不夠時會很慢。\n"
@@ -3366,9 +3094,8 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                 "### 🧰 需要時再下載的模型\n"
                 "雙擊面板資料夾裡的 **`download_extras.bat`**，輸入數字即可下載（可續傳、自動核對 SHA-256）：\n\n"
                 "1. 🎨 圖片分頁：Krea2 模型（約 19 GB）　2. Krea2 官方風格 LoRA　3. 🖌️ 修圖分頁：Qwen-Image-2.1（約 17 GB）\n"
-                "4. 🔍 放大分頁：SeedVR2（約 7 GB）　5. 高清二次採樣放大模型（僅 24GB）　6. Heretic 文字編碼器\n\n"
-                f"長片的 Smite79 引擎需自行安裝（授權不允許其他安裝程式代為下載）：{SMITE_REPO_URL} ，"
-                "沒裝時長片分頁會自動改用 TimelineDirector。\n\n"
+                "4. 🔍 放大分頁：SeedVR2（約 7 GB）　5. 高清二次採樣放大模型（僅 24GB）　6. Heretic 文字編碼器\n"
+                "7. ✨ AI 專業提示詞模型（Qwen3-VL 4B，約 5 GB；已下載 1 或 3 就不用再下載）\n\n"
                 "### 🖥️ 架構\n"
                 "- 後端：ComfyUI v0.36.0（本機 http://127.0.0.1:8188 可開原生節點畫布）\n"
                 "- 影音模型：MiniMax H3 FL2VA／Ref2VA Q4_K_M GGUF（預設）、Qwen3-VL 32B NVFP4 文字編碼器、H3 影音 VAE（有 INT8 版時自動使用）\n"
@@ -3412,11 +3139,11 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                        [model_fl2va, t2v_res, i2v_res, t2v_turbo, i2v_turbo, camera_turbo, story_turbo],
                        [t2v_hd, i2v_hd, t2v_res, i2v_res, t2v_turbo, i2v_turbo, camera_turbo, story_turbo],
                        queue=False)
-    model_ref2va.change(ref2va_model_changed, [model_ref2va, ref_turbo, v2v_turbo, long_mode], [ref_turbo, v2v_turbo, long_mode, v2v_model], queue=False)
+    model_ref2va.change(ref2va_model_changed, [model_ref2va, ref_turbo, v2v_turbo], [ref_turbo, v2v_turbo, v2v_model], queue=False)
     demo.load(fl2va_model_changed,
               [model_fl2va, t2v_res, i2v_res, t2v_turbo, i2v_turbo, camera_turbo, story_turbo],
               [t2v_hd, i2v_hd, t2v_res, i2v_res, t2v_turbo, i2v_turbo, camera_turbo, story_turbo])
-    demo.load(ref2va_model_changed, [model_ref2va, ref_turbo, v2v_turbo, long_mode], [ref_turbo, v2v_turbo, long_mode, v2v_model])
+    demo.load(ref2va_model_changed, [model_ref2va, ref_turbo, v2v_turbo], [ref_turbo, v2v_turbo, v2v_model])
 
 CLIPBOARD_JS_PATH = os.path.join(BASE_DIR, "clipboard_paste.js")
 try:
