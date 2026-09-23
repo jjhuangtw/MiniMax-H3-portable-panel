@@ -996,13 +996,17 @@ QWEN_IMAGE_DEFAULT_DIT = "qwen_image_2.1_int8_convrot.safetensors"
 QWEN_IMAGE_DEFAULT_ENCODER = "qwen3vl_8b_int8_convrot.safetensors"
 QWEN_IMAGE_DEFAULT_VAE = "qwen_image_2.1_vae_bf16.safetensors"
 
-QWEN_IMAGE_RESOLUTIONS = [
-    "保持原圖比例 (預設 1024 推薦)",
-    "2048 (2K 原生高解析度)",
-    "768 (中解析度 · 極速)",
-    "512 (標清 · 快速預覽)",
-    "0 (完全依原圖原始像素)",
-]
+# Label -> TextEncodeQwenImage21 `resolution` (target long side, 0 = the picture's own pixels).
+# Looked up by exact label: matching "0" in the text sent the 1024 default ("…1024…") as 0, so a
+# 2400×1792 photo was edited at 4.3 MP, ~8 s per step instead of <1 s.
+QWEN_IMAGE_RESOLUTION_VALUES = {
+    "保持原圖比例 (預設 1024 推薦)": 1024,
+    "2048 (2K 原生高解析度 · 較慢)": 2048,
+    "768 (中解析度 · 極速)": 768,
+    "512 (標清 · 快速預覽)": 512,
+    "0 (完全依原圖原始像素 · 大圖非常慢)": 0,
+}
+QWEN_IMAGE_RESOLUTIONS = list(QWEN_IMAGE_RESOLUTION_VALUES)
 
 QWEN_IMAGE_PRESETS = {
     "👕 換裝／換衣服 (將 <image2> 服裝換到 <image1> 人物上)":
@@ -1130,16 +1134,7 @@ def execute_qwen_image_edit(primary_image, ref_image, extra_ref_images, prompt, 
         if r_name:
             uploaded_names.append(r_name)
 
-    # Parse resolution
-    res_val = 1024
-    if "2048" in str(res_choice):
-        res_val = 2048
-    elif "768" in str(res_choice):
-        res_val = 768
-    elif "512" in str(res_choice):
-        res_val = 512
-    elif "0" in str(res_choice):
-        res_val = 0
+    res_val = QWEN_IMAGE_RESOLUTION_VALUES.get(res_choice, 1024)
 
     if seed is None or seed == -1:
         import random
@@ -1198,6 +1193,24 @@ BRUSH_REMOVE_MODE = "🧽 移除塗到的東西"
 BRUSH_EXAMPLES = ["一棵高大茂密的大樹", "一座木造涼亭", "盛開的花圃", "一整面落地玻璃窗", "一盞溫暖的吊燈",
                   "一張米白色布沙發", "一隻坐著的柴犬", "一條石板步道", "游泳池", "夕陽晚霞的天空"]
 BRUSH_COLORS = ["#22c55e", "#ef4444", "#3b82f6", "#facc15", "#a855f7", "#ffffff", "#000000"]
+
+def retry_while_uploading(editor, attempts=12, delay=0.5):
+    """The editor re-uploads background, strokes and composite after every stroke; pressing generate
+    right after the last stroke can make Gradio read a composite that is still being written
+    ("image file is truncated"). Wait for the upload to land instead of failing."""
+    preprocess = editor.preprocess
+
+    def patient_preprocess(payload):
+        for attempt in range(attempts):
+            try:
+                return preprocess(payload)
+            except OSError:
+                if attempt == attempts - 1:
+                    raise gr.Error("筆畫圖片還在上傳中，請等一兩秒再按一次生成。")
+                time.sleep(delay)
+
+    editor.preprocess = patient_preprocess
+    return editor
 
 def brush_edit_prompt(mode, instruction):
     what = (instruction or "").strip()
@@ -2850,7 +2863,7 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                             label="輸出解析度",
                             choices=QWEN_IMAGE_RESOLUTIONS,
                             value=QWEN_IMAGE_RESOLUTIONS[0],
-                            info="預設 1024 自動等比例縮放；可選 2048 原生 2K 或 0 保持像素"
+                            info="預設把長邊縮到 1024（約 20 秒一張）；2048 與「0 原圖像素」對大圖會慢很多"
                         )
                         qwen_steps = gr.Slider(label="採樣步數 (推薦 25 步)", minimum=10, maximum=50, value=25, step=1)
                         qwen_cfg = gr.Number(label="CFG (官方推薦 1.0)", value=1.0)
@@ -2930,6 +2943,7 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                         height=560, sources=("upload", "clipboard"), layers=False, transforms=(),
                         brush=gr.Brush(colors=BRUSH_COLORS, default_color=BRUSH_COLORS[0], color_mode="defaults", default_size=12),
                         eraser=gr.Eraser(default_size=24))
+                    retry_while_uploading(brush_editor)
                     brush_mode = gr.Radio(label="筆畫的用途", choices=list(BRUSH_MODES), value=next(iter(BRUSH_MODES)))
                     with gr.Row():
                         brush_instruction = gr.Textbox(label="要變成什麼（移除時可留空）", lines=2, scale=3,
