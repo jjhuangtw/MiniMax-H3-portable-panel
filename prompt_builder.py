@@ -6,6 +6,7 @@ import os
 import re
 
 import gradio as gr
+from ui_i18n import L, T, choices
 from zhconv import convert
 
 DIALOGUE_LANGUAGES = ["Chinese", "English", "Japanese", "Korean", "Cantonese"]
@@ -46,7 +47,7 @@ KEYFRAME_PREFIXES = ("For the target video, at 0.00 seconds", "How the reference
 def dialogue_text(speaker, speaker_id, language, line, to_simplified):
     line = (line or "").strip()
     if not line:
-        raise gr.Error("請先輸入台詞。")
+        raise gr.Error(L("請先輸入台詞。"))
     if to_simplified and language in ("Chinese", "Cantonese"):
         # Traditional characters more often mismatch pronunciation and lip shapes on H3.
         line = convert(line, "zh-cn")
@@ -95,7 +96,7 @@ def with_keyframe_instruction(prompt, has_first, has_last, frame_count):
 def compose_base_prompt(description, soundscape, music):
     description = (description or "").strip()
     if not description:
-        raise gr.Error("請填寫「畫面與動作」。")
+        raise gr.Error(L("請填寫「畫面與動作」。"))
     if not description.startswith("[Shot"):
         description = "[Shot 1] " + description
     return (f"integrated_multimodal_description: {description}\n\n"
@@ -122,12 +123,15 @@ def reference_labels(image_paths, video_items, audio_paths):
     return labels
 
 
+LABEL_TABLE_EMPTY = "尚未上傳任何參考素材（沒有素材時等同文生影音）。"
+
+
 def label_table(labels):
     if not labels:
-        return "尚未上傳任何參考素材（沒有素材時等同文生影音）。"
+        return L(LABEL_TABLE_EMPTY)
     kinds = {"picture": "參考圖", "video": "參考影片（畫面）", "video_audio": "參考影片的原音軌", "audio": "獨立音檔"}
-    rows = "\n".join(f"| `{label}` | {kinds[kind]} | {name} |" for label, kind, name in labels)
-    return "**提示詞標籤對照**（依上傳順序編號）\n\n| 標籤 | 類型 | 檔案 |\n|---|---|---|\n" + rows
+    rows = "\n".join(f"| `{label}` | {L(kinds[kind])} | {name} |" for label, kind, name in labels)
+    return L("**提示詞標籤對照**（依上傳順序編號）\n\n| 標籤 | 類型 | 檔案 |\n|---|---|---|\n") + rows
 
 
 AUTO_REF_MODES = [
@@ -236,15 +240,15 @@ def compose_ref_prompt(rows, task_types, summary, style, description, soundscape
         rows = rows.values.tolist()
     rows = [[str(c or "").strip() for c in row] for row in (rows or []) if row and str(row[0] or "").strip()]
     if not rows:
-        raise gr.Error("請先在表格填入參考物（可按「依上傳素材產生表格」）。")
+        raise gr.Error(L("請先在表格填入參考物（可按「依上傳素材產生表格」）。"))
     if not (description or "").strip():
-        raise gr.Error("請填寫「逐鏡描述」。")
+        raise gr.Error(L("請填寫「逐鏡描述」。"))
     definitions = "\n".join(f"{label} {definition}" for label, definition, *_ in rows)
     retention = []
     for label, _, where, marker, note in rows:
         allowed = AUDIO_MARKERS if label.startswith("<Audio") else VISUAL_MARKERS
         if marker not in allowed:
-            raise gr.Error(f"{label} 的保留方式必須是：{' / '.join(allowed)}")
+            raise gr.Error(L('{0} 的保留方式必須是：{1}', label, ' / '.join(allowed)))
         position = "" if label.startswith("<Audio") or not where else f" ({where})"
         retention.append(f"{label}{position}: {marker} - {note}")
     prefix = " + ".join(task_types) if task_types else "reference generation"
@@ -262,20 +266,20 @@ def compose_ref_prompt(rows, task_types, summary, style, description, soundscape
 
 def _dialogue_and_camera_tools(target_box):
     with gr.Row():
-        speaker = gr.Textbox(label="說話者描述（英文）", placeholder="The young woman with a clear, bright voice", scale=4)
-        speaker_id = gr.Dropdown(label="說話者 ID", choices=SPEAKER_IDS, value="S1", scale=1)
-        language = gr.Dropdown(label="語言", choices=DIALOGUE_LANGUAGES, value="Chinese", scale=1)
+        speaker = gr.Textbox(label=T("說話者描述（英文）"), placeholder="The young woman with a clear, bright voice", scale=4)
+        speaker_id = gr.Dropdown(label=T("說話者 ID"), choices=SPEAKER_IDS, value="S1", scale=1)
+        language = gr.Dropdown(label=T("語言"), choices=DIALOGUE_LANGUAGES, value="Chinese", scale=1)
     with gr.Row():
-        line = gr.Textbox(label="台詞（照原文，不翻譯）", scale=5)
-        simplified = gr.Checkbox(label="中文轉簡體", value=True, scale=1,
-                                 info="繁體台詞較容易發音或嘴型對不上")
-    insert_line = gr.Button("插入台詞 <d>…</d>")
+        line = gr.Textbox(label=T("台詞（照原文，不翻譯）"), scale=5)
+        simplified = gr.Checkbox(label=T("中文轉簡體"), value=True, scale=1,
+                                 info=T("繁體台詞較容易發音或嘴型對不上"))
+    insert_line = gr.Button(T("插入台詞 <d>…</d>"))
     with gr.Row():
-        motion = gr.Dropdown(label="運鏡", choices=list(CAMERA_MOTIONS), value="推近 Push In")
-        amplitude = gr.Dropdown(label="幅度", choices=list(AMPLITUDES), value="小幅度")
-        speed = gr.Dropdown(label="速度", choices=list(SPEEDS), value="慢速")
-        target = gr.Textbox(label="朝向（英文，選填）", placeholder="her face")
-    insert_camera = gr.Button("插入運鏡句")
+        motion = gr.Dropdown(label=T("運鏡"), choices=choices(list(CAMERA_MOTIONS)), value="推近 Push In")
+        amplitude = gr.Dropdown(label=T("幅度"), choices=choices(list(AMPLITUDES)), value="小幅度")
+        speed = gr.Dropdown(label=T("速度"), choices=choices(list(SPEEDS)), value="慢速")
+        target = gr.Textbox(label=T("朝向（英文，選填）"), placeholder="her face")
+    insert_camera = gr.Button(T("插入運鏡句"))
     insert_line.click(lambda text, s, sid, lang, ln, simp: append_sentence(text, dialogue_text(s, sid, lang, ln, simp)),
                       [target_box, speaker, speaker_id, language, line, simplified], target_box, queue=False)
     insert_camera.click(lambda text, m, a, sp, t: append_sentence(text, camera_sentence(m, a, sp, t)),
@@ -283,36 +287,38 @@ def _dialogue_and_camera_tools(target_box):
 
 
 def add_base_prompt_builder(prompt_box):
-    with gr.Accordion("🧱 結構化提示詞（官方三段格式）", open=False):
-        gr.Markdown("依 MiniMax 官方寫法：畫面、環境音、配樂分開寫，模型才分得清聲音屬於哪一層。欄位請用英文；台詞保留原文。"
-                    "有首幀／尾幀時，生成時會自動在第一行加上官方的對齊宣告。多鏡頭時，第 2 鏡起寫 `[Shot 2] At 00:03.500, the camera cuts to ...`。")
-        description = gr.Textbox(label="畫面與動作 integrated_multimodal_description", lines=5,
+    with gr.Accordion(T("🧱 結構化提示詞（官方三段格式）"), open=False):
+        gr.Markdown(T("依 MiniMax 官方寫法：畫面、環境音、配樂分開寫，模型才分得清聲音屬於哪一層。欄位請用英文；台詞保留原文。"
+                    "有首幀／尾幀時，生成時會自動在第一行加上官方的對齊宣告。多鏡頭時，第 2 鏡起寫 `[Shot 2] At 00:03.500, the camera cuts to ...`。"))
+        description = gr.Textbox(label=T("畫面與動作 integrated_multimodal_description"), lines=5,
                                  placeholder="[Shot 1] Live-action, cinematic, a medium shot frames ...")
         _dialogue_and_camera_tools(description)
-        soundscape = gr.Textbox(label="環境音 overall_soundscape", lines=2, placeholder="Rain taps against the window while ...")
-        music = gr.Textbox(label="配樂 non_diegetic_music（沒有就留 N/A）", value="N/A", lines=2)
-        compose = gr.Button("組合並填入提示詞", variant="secondary")
+        soundscape = gr.Textbox(label=T("環境音 overall_soundscape"), lines=2, placeholder="Rain taps against the window while ...")
+        music = gr.Textbox(label=T("配樂 non_diegetic_music（沒有就留 N/A）"), value="N/A", lines=2)
+        compose = gr.Button(T("組合並填入提示詞"), variant="secondary")
         compose.click(compose_base_prompt, [description, soundscape, music], prompt_box, queue=False)
 
 
 def add_ref_prompt_builder(prompt_box, labels_state, audio_mode_box):
-    with gr.Accordion("🧱 結構化提示詞（官方 Ref 六段格式）", open=False):
+    with gr.Accordion(T("🧱 結構化提示詞（官方 Ref 六段格式）"), open=False):
         gr.Markdown(
-            "Ref 的關鍵是講清楚「哪個參考物負責哪件事」。同一張圖可以只借臉、只借衣服或只借場景；**沒寫到的東西，模型會保留原狀。**\n\n"
+            T("Ref 的關鍵是講清楚「哪個參考物負責哪件事」。同一張圖可以只借臉、只借衣服或只借場景；**沒寫到的東西，模型會保留原狀。**\n\n"
             "- 畫面類保留方式：`fully_preserved` 完全保留／`partially_preserved` 部分保留／`attribute_transfer` 只把特徵轉移到另一個對象（例如換裝）／`weak_reference` 只取風格氛圍\n"
             "- 音訊類：`fully_copy` 整條當成片音軌（對嘴）／`partially_copy` 部分沿用／`reference` 只借音色節奏（說新的話）／`weak_reference`\n"
-            "- `<Subject N>` 是從素材抽出來的人、場景、服裝；只有當圖片本身就是某一格畫面（例如首幀）時，才單獨定義 `<Picture N>`。"
+            "- `<Subject N>` 是從素材抽出來的人、場景、服裝；只有當圖片本身就是某一格畫面（例如首幀）時，才單獨定義 `<Picture N>`。")
         )
-        fill = gr.Button("依上傳素材產生表格")
-        table = gr.Dataframe(headers=REF_COLUMNS, datatype=["str"] * 5, column_count=(5, "fixed"), interactive=True, wrap=True)
-        task_types = gr.CheckboxGroup(label="任務類型（summary 開頭）", choices=TASK_TYPES, value=["reference generation"])
-        summary = gr.Textbox(label="摘要 summary（英文一小段）", lines=2)
-        style = gr.Textbox(label="風格開場句（英文，放在 [Shot 1] 之前）", placeholder="The target video is live-action and photorealistic, with soft daylight.")
-        description = gr.Textbox(label="逐鏡描述 detailed_description", lines=6,
+        fill = gr.Button(T("依上傳素材產生表格"))
+        table = gr.Dataframe(headers=[T(h) for h in REF_COLUMNS], datatype=["str"] * 5, column_count=(5, "fixed"), interactive=True, wrap=True)
+        task_types = gr.CheckboxGroup(label=T("任務類型（summary 開頭）"), choices=TASK_TYPES, value=["reference generation"])
+        summary = gr.Textbox(label=T("摘要 summary（英文一小段）"), lines=2)
+        style = gr.Textbox(label=T("風格開場句（英文，放在 [Shot 1] 之前）"), placeholder="The target video is live-action and photorealistic, with soft daylight.")
+        description = gr.Textbox(label=T("逐鏡描述 detailed_description"), lines=6,
                                  placeholder="[Shot 1] The shot begins from <Picture 1>: ... <Subject 1> ...")
         _dialogue_and_camera_tools(description)
-        soundscape = gr.Textbox(label="環境音 overall_soundscape", lines=2)
-        music = gr.Textbox(label="配樂 non_diegetic_music", value="N/A", lines=2)
-        compose = gr.Button("組合並填入提示詞", variant="secondary")
+        soundscape = gr.Textbox(label=T("環境音 overall_soundscape"), lines=2)
+        music = gr.Textbox(label=T("配樂 non_diegetic_music"), value="N/A", lines=2)
+        compose = gr.Button(T("組合並填入提示詞"), variant="secondary")
         fill.click(default_reference_rows, [labels_state, audio_mode_box], table, queue=False)
-        compose.click(compose_ref_prompt, [table, task_types, summary, style, description, soundscape, music], prompt_box, queue=False)
+        # api_visibility="private": the table's translated headers are not JSON, which breaks Gradio's API docs.
+        compose.click(compose_ref_prompt, [table, task_types, summary, style, description, soundscape, music], prompt_box,
+                      queue=False, api_visibility="private")

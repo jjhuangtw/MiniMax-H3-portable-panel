@@ -73,11 +73,12 @@
 ## Ref2VA NSFW LoRA 與採樣排程
 
 - 「Ref2VA 萬用參考」分頁新增「採樣排程」選單（simple／beta／sgm_uniform／normal／karras），預設 simple。
-- `SexGod1979/AfterMidnight-MiniMax-H3-NSFW`（版本 `4b325f60229c136b97501f5830bb277aace738b6`，Apache-2.0）的兩個 rank64 LoRA 已放入 `ComfyUI/models/loras`，`download_ref2va_loras.py` 可續傳並核對 SHA-256：
+- `SexGod1979/AfterMidnight-MiniMax-H3-NSFW`（版本 `4b325f60229c136b97501f5830bb277aace738b6`，Apache-2.0）的兩個 rank64 LoRA 已放入 `ComfyUI/models/loras/NSFW`（ComfyUI 選單中顯示為 `NSFW\…`），`download_ref2va_loras.py` 可續傳並核對 SHA-256：
   - `AfterMidnight_ref2va_h3_sexytime_rank64-v1.2.safetensors`（1,192,828,320 bytes，動作取向，建議強度 1.0）
   - `AfterMidnight_ref2va_h3_softer_rank64_v1.safetensors`（1,192,828,168 bytes，細節取向，0.8–1.0）
 - **只適用 Ref2VA**，文生與首尾幀分頁的 FL2VA 模型不適用。
-- **作者要求 euler + beta 排程**，否則音訊會出現異常；面板的採樣器固定 euler，排程請自行改成 beta。
+- 選用方式：「🧩 模型設定」的「🧷 Ref2VA LoRA」選單＋「LoRA 強度」（FL2VA 另有一個選單）。作用在參考影音、V2V、對嘴與附參考圖的編劇；以 `LoraLoaderModelOnly` 疊在 Turbo LoRA 之後（節點 9）。2026-09-26 實測 softer 0.8、864×480／4 秒約 67 秒。
+- **作者要求 euler + beta 排程**，否則音訊會出現異常；面板的採樣器固定 euler，選到 AfterMidnight 時會自動改用 beta 並提示（`LORA_SCHEDULERS`）。
 - 這兩個 LoRA 只包含 attention（qkv、out_proj）與 MLP 共 600 個張量，不含 adaln，因此可直接套用於 pruned Q4 GGUF；含 adaln 的 LoRA 在 pruned 模型上會有部分權重被靜默丟棄。
 
 ## 高清二次採樣
@@ -96,6 +97,14 @@
 - 做法：沿用「🖌️ 修圖」的 Qwen-Image-2.1 與其模型設定，把**原圖當 `<image1>`、畫了筆畫的圖當 `<image2>`**，提示詞要求依 `<image2>` 筆畫的位置修改 `<image1>`、其餘不變、結果不得留筆畫。實測只送畫了筆畫的單張圖時，新物件會偏離筆畫位置；兩張一起送則準確落在筆畫上。
 - 沒畫筆畫就按生成會提示；結果可按「🔄 用結果繼續畫」接著改下一處，或套用到首尾幀／參考分頁。RTX 4090：1024 解析度、25 步每張約 17～26 秒（第一次載入模型較久）。
 - 速度主要取決於「輸出解析度」而不是模型大小：預設把長邊縮到約 1024；選「0 原圖像素」時 2400×1792（4.3 MP）的照片每步約 8 秒、整張約 3.5 分鐘。舊版把預設誤判成 0（標籤「1024」裡有 0），修圖與筆刷修圖都受影響，現已改為依標籤精確對應。
+
+## 🌐 繁體中文／English 介面切換
+
+- 介面語言自動跟隨瀏覽器：中文（zh-*）瀏覽器顯示繁體中文，其他顯示英文；上方「🌐 English／🌐 中文」按鈕可切換，選擇存在瀏覽器（localStorage 與 cookie），下次開啟沿用。
+- 做法：程式裡的中文就是原文；`ui_i18n.py` 的 `T()` 包介面文字（交給 Gradio 6 內建 i18n 在瀏覽器翻譯）、`L()` 包執行時產生的訊息（錯誤、警告、進度、狀態列，依請求的 cookie／Accept-Language 在伺服器端選語言）；英文對照在 `i18n_en.py`（以中文原句為鍵，`{0}` 佔位符兩邊一致）。下拉選單只翻譯顯示文字，選到的值不變，程式邏輯不受影響。
+- Gradio 會在 `head` 內容載入前就決定語言，所以 `LanguageBoot` 中介層把一小段腳本插到頁面 `<head>` 最前面，先套用記住的語言。
+- 不翻譯的部分：提示詞範本庫的範本名稱與內容、編劇範本的故事內容、送給模型的提示詞、歷史紀錄裡存的資料。新增介面文字時，在 `i18n_en.py` 補一行英文即可；沒補的會直接顯示中文。
+- 注意：兩個表格（編劇分鏡表、Ref 結構化表格）的欄名是翻譯標記，無法轉成 JSON，所以這兩個按鈕設為 `api_visibility="private"`（不列在 Gradio API 文件），否則啟動時 API 文件產生會失敗、面板開不起來。
 
 ## 🌐 提示詞網站
 

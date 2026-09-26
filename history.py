@@ -7,6 +7,8 @@ import os
 import subprocess
 import time
 
+from ui_i18n import L
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 HISTORY_PATH = os.path.join(BASE_DIR, "generation_history.jsonl")
 THUMB_DIR = os.path.join(BASE_DIR, "history_thumbs")
@@ -122,12 +124,12 @@ def gallery(rows):
 def delete_entry(target_id, target_output=None, delete_file=False):
     """Delete a single history entry from JSONL, and optionally delete the file on disk."""
     if not os.path.exists(HISTORY_PATH):
-        return False, "紀錄檔不存在"
+        return False, L("紀錄檔不存在")
     try:
         with open(HISTORY_PATH, "r", encoding="utf-8") as stream:
             lines = [l for l in stream if l.strip()]
     except Exception as e:
-        return False, f"讀取紀錄失敗: {e}"
+        return False, L("讀取紀錄失敗: {0}", e)
 
     kept_lines = []
     deleted_entry = None
@@ -144,13 +146,13 @@ def delete_entry(target_id, target_output=None, delete_file=False):
             kept_lines.append(l)
 
     if not deleted_entry:
-        return False, "找不到對應的紀錄"
+        return False, L("找不到對應的紀錄")
 
     try:
         with open(HISTORY_PATH, "w", encoding="utf-8") as stream:
             stream.writelines(kept_lines)
     except Exception as e:
-        return False, f"寫入紀錄檔失敗: {e}"
+        return False, L("寫入紀錄檔失敗: {0}", e)
 
     # Optionally delete file on disk
     if delete_file and deleted_entry:
@@ -167,7 +169,7 @@ def delete_entry(target_id, target_output=None, delete_file=False):
             except Exception:
                 pass
 
-    return True, "已成功刪除紀錄"
+    return True, L("已成功刪除紀錄")
 
 
 def clean_missing(category="all"):
@@ -226,7 +228,7 @@ def details_text(row):
         ("output", "成品檔案路徑")
     ]
     lines = [
-        f"- **{label}**：`{row[key]}`" if key == "output" else f"- **{label}**：{row[key]}"
+        f"- **{L(label)}**：`{row[key]}`" if key == "output" else f"- **{L(label)}**：{row[key]}"
         for key, label in keys if row.get(key) not in (None, "", False)
     ]
     return "\n".join(lines)

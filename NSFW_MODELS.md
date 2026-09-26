@@ -90,11 +90,22 @@ Optional: the uncensored **Heretic** text encoder is option **6** in `download_e
 language model's refusals; what H3 can draw depends on the diffusion model above.
 選用：無審查的 **Heretic** 文字編碼器在 `download_extras.bat` 的選項 **6**。它只拿掉語言模型的拒答，畫得出什麼取決於上面的擴散模型。
 
-**LoRAs:** the panel has no LoRA menu for the H3 video tabs. Ref2VA LoRAs such as
-[SexGod1979/AfterMidnight-MiniMax-H3-NSFW](https://huggingface.co/SexGod1979/AfterMidnight-MiniMax-H3-NSFW)
-(Apache-2.0, goes in `ComfyUI\models\loras\`) can only be used in your own workflows in ComfyUI itself
-(http://127.0.0.1:8188). The author requires the euler sampler with the **beta** scheduler, or the audio breaks.
-**LoRA**：面板的影音分頁沒有 LoRA 選單。上面這類 Ref2VA LoRA（放 `ComfyUI\models\loras\`）只能在 ComfyUI 本體（http://127.0.0.1:8188）自己的工作流使用；作者要求 euler + **beta** 排程，否則音訊會壞。
+## LoRAs / LoRA
+
+Ref2VA LoRAs such as [SexGod1979/AfterMidnight-MiniMax-H3-NSFW](https://huggingface.co/SexGod1979/AfterMidnight-MiniMax-H3-NSFW)
+(Apache-2.0, two 1.19 GB files: `…_sexytime_rank64-v1.2` for motion at strength 1.0, `…_softer_rank64_v1` for
+detail at 0.8–1.0):
+
+1. Put them in a subfolder such as `ComfyUI\models\loras\NSFW\`. 放進 `ComfyUI\models\loras\NSFW\` 這類子資料夾。
+2. In **🧩 模型設定** press **🔄 重新掃描**, then pick the file in **🧷 Ref2VA LoRA** and set **LoRA 強度**.
+   在 **🧩 模型設定** 按 **🔄 重新掃描**，在 **🧷 Ref2VA LoRA** 選它並調 **LoRA 強度**。
+3. It applies to the Ref2VA tabs (reference, V2V, lip-sync, storyboard with reference pictures). AfterMidnight's
+   author requires the **beta** scheduler or the audio breaks — the panel switches to beta automatically.
+   只作用在 Ref2VA 分頁（參考影音、V2V、對嘴、附參考圖的編劇）。作者要求 **beta** 排程，否則音訊會壞；面板會自動改用 beta。
+
+FL2VA LoRAs (text-to-video, keyframes) are picked the same way in **🧷 FL2VA LoRA**. A LoRA whose name contains
+`ref2v` only shows in the Ref2VA menu, and one with `fl2v` only in the FL2VA menu.
+FL2VA 用的 LoRA 在 **🧷 FL2VA LoRA** 選單選用；檔名含 `ref2v` 只出現在 Ref2VA 選單，含 `fl2v` 只出現在 FL2VA 選單。
 
 ## Rules / 使用規範
 

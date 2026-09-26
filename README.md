@@ -7,6 +7,10 @@ The panel detects your VRAM at start-up and adjusts itself — no settings to le
 在本機 NVIDIA 顯卡（**12～32 GB 顯存**）上跑 MiniMax H3 開源影音生成的 Gradio 面板，後端是 ComfyUI，全程本機推論、不使用雲端 API。
 開啟時自動偵測顯存並調整設定，不用自己記參數。
 
+**Traditional Chinese / English**: the interface follows your browser language (any Chinese browser → 繁體中文,
+everything else → English); the 🌐 button at the top switches and remembers your choice.
+介面語言自動跟隨瀏覽器（中文瀏覽器顯示繁體中文，其他顯示英文），也可以按上方 🌐 按鈕切換並記住。
+
 Tabs / 分頁：Text-to-Video · FL2VA keyframes · Ref2VA reference · V2V · lip-sync · SeedVR2 video upscale ·
 Krea2 image generation · Qwen-Image editing · 🖍️ brush editing (scribble a few strokes → AI redraws them
 as real objects) · 3D camera · storyboard · history · 🌐 prompt site ([ArchiPrompt](https://archi-prompt.com/),
