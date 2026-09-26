@@ -7,6 +7,7 @@ import re
 
 import gradio as gr
 from ui_i18n import L, T, choices
+from ui_i18n import table as localized_table
 from zhconv import convert
 
 DIALOGUE_LANGUAGES = ["Chinese", "English", "Japanese", "Korean", "Cantonese"]
@@ -232,7 +233,7 @@ def default_reference_rows(labels, audio_mode):
             note = (f"{label} is reused 1:1 as the target video's complete final audio track." if marker == "fully_copy"
                     else f"the speaker follows {label}'s timbre and delivery without copying the original signal.")
             rows.append([label, meaning, "", marker, note])
-    return rows
+    return localized_table(rows, REF_COLUMNS)
 
 
 def compose_ref_prompt(rows, task_types, summary, style, description, soundscape, music):

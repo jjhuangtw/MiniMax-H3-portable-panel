@@ -4,6 +4,7 @@
 !.gitignore
 !.gitattributes
 !README.md
+!README.*.md
 !RTX4090_LOCAL.md
 !NSFW_MODELS.md
 !LICENSE

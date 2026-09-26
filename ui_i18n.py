@@ -71,6 +71,13 @@ def L(zh, *args, **kwargs):
     return text.format(*args, **kwargs) if (args or kwargs) else text
 
 
+def table(rows, headers):
+    """A Dataframe value with plain translated headers. Returning bare rows makes Gradio reuse the
+    component's T() headers, which are not translated inside a value update and show as raw markers."""
+    import pandas as pd
+    return pd.DataFrame(list(rows or []), columns=[L(h) for h in headers])
+
+
 def build_i18n():
     return gr.I18n(**{ZH: _zh, EN_CODE: _en})
 

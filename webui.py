@@ -17,6 +17,7 @@ import websocket
 import gradio as gr
 from ui_i18n import L, T, TOGGLE_JS, build_i18n, choices
 from ui_i18n import app_kwargs as i18n_app_kwargs
+from ui_i18n import table as localized_table
 from i18n_en import EN
 import re
 import math
@@ -2209,8 +2210,10 @@ def plan_storyboard(story, seconds_per_shot=4):
     else:
         parts = [x.strip() for x in re.split(r"(?<=[。！？!?])\s*|\n+", story) if x.strip()]
         rows = [(text, STORY_DEFAULT_CAMERA, STORY_DEFAULT_SOUND) for text in parts]
-    return [[i, L("鏡頭 {0}", i), text, camera, int(seconds_per_shot), sound]
-            for i, (text, camera, sound) in enumerate(rows[:30], 1)]
+    return localized_table([[i, L("鏡頭 {0}", i), text, camera, int(seconds_per_shot), sound]
+                            for i, (text, camera, sound) in enumerate(rows[:30], 1)], STORY_COLUMNS)
+
+STORY_COLUMNS = ["序號", "鏡頭名", "畫面內容", "運鏡", "秒數", "聲音／配樂"]
 
 STORY_IMAGE_MODES = {
     "person": "👤 人物參考：圖中的人出演每個鏡頭（最多 3 張）",
@@ -3101,7 +3104,7 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                 story_turbo = gr.Dropdown(label=T("採樣模式"), choices=choices(SAMPLING_MODES), value=MODE_TURBO_LORA)
             wire_prompt_assistant(story_assist, [story_setting, story_text], story_seconds=story_seconds)
             plan_btn = gr.Button(T("① 自動拆分分鏡"), variant="secondary")
-            shot_table = gr.Dataframe(headers=[T(h) for h in ["序號", "鏡頭名", "畫面內容", "運鏡", "秒數", "聲音／配樂"]], datatype=["number", "str", "str", "str", "number", "str"], interactive=True, wrap=True)
+            shot_table = gr.Dataframe(headers=[T(h) for h in STORY_COLUMNS], datatype=["number", "str", "str", "str", "number", "str"], interactive=True, wrap=True)
             render_btn = gr.Button(T("② 批次渲染並自動剪接"), variant="primary", size="lg")
             studio_output = gr.Video(label=T("完整成片"), interactive=False, height=520)
             story_cat.change(lambda c: gr.Dropdown(choices=choices(story_template_names(c)), value=story_template_names(c)[0]),
