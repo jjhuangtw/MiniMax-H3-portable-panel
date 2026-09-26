@@ -65,15 +65,17 @@ def _run_ffmpeg(args):
         raise RuntimeError(result.stderr.strip()[-800:] or "ffmpeg failed")
 
 
-def prepare_reference_video(path):
-    """Re-time to 24 fps, cap at the trained 15 s and shrink to a 720 px short edge.
+def prepare_reference_video(path, max_seconds=MAX_REF_SECONDS):
+    """Re-time to 24 fps, cap at max_seconds (at most the trained 15 s) and shrink to a 720 px short edge.
 
     H3 reads reference frames as 24 fps, so a 30/60 fps upload would otherwise play back too slowly.
+    Every reference frame is attended together with the target, so callers pass the target length:
+    frames past the end of the output only cost VRAM and time.
     Returns (prepared_path, has_audio, seconds).
     """
     audio = has_audio_stream(path)
     output = os.path.join(tempfile.gettempdir(), f"h3_ref_{uuid.uuid4().hex[:10]}.mp4")
-    args = ["-i", path, "-t", f"{MAX_REF_SECONDS:.3f}",
+    args = ["-i", path, "-t", f"{min(max_seconds, MAX_REF_SECONDS):.3f}",
             "-vf", f"fps={H3_FPS},scale='if(gt(iw,ih),-2,min(720,iw))':'if(gt(iw,ih),min(720,ih),-2)'",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", "-pix_fmt", "yuv420p"]
     args += ["-c:a", "aac", "-b:a", "192k"] if audio else ["-an"]

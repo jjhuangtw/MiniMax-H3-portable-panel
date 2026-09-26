@@ -90,6 +90,11 @@ SAMPLING_MODES = [MODE_TURBO_LORA, MODE_BAKED_TURBO, MODE_FULL]
 HD_MAX_MODEL_BYTES = 15 * 1000 ** 3
 # Tested ceilings on this 24 GB card: 1920×1088 ran 12 s with the Q4 trunk, 1280×704 has more room.
 HD_MAX_PIXEL_SECONDS = 1920 * 1088 * 12
+# Ref2VA load = width × height × (output frames + reference-video frames), scaled to a 24 GB card.
+# Measured on the 4090 (smart memory off): 864×480 with 277 + 277 frames (230M) took 7.5 min, 75 s a step.
+REF_MEASURED_PIXEL_FRAMES = 864 * 480 * (277 + 277)
+REF_MEASURED_MINUTES = 7.5
+REF_HEAVY_PIXEL_FRAMES = 150_000_000    # warn above this (about 3 min and up)
 MODE_SETTINGS = {MODE_TURBO_LORA: (True, 4, 1.0), MODE_BAKED_TURBO: (False, 8, 1.0), MODE_FULL: (False, 20, 2.5)}
 
 def mode_settings(mode):
@@ -135,6 +140,7 @@ BASE_RES_CHOICES = [
     "768 × 1344 (9:16 直式短影音 · 高清 · 最吃顯存)",
 ]
 DEFAULT_RES = BASE_RES_CHOICES[0]
+CAMERA_RES_INFO = "自動：依參考圖比例。最高到官方上限 1344×768；要更高請生成後用「🔍 放大」。"
 # Ref2VA / V2V skip the 1344×768 ceiling: the reference latents already take part of the budget.
 REF_RES_CHOICES = [choice for choice in BASE_RES_CHOICES if not choice.startswith("1344")]
 # Above this area a 12–16 GB card tends to spill into shared memory or run out of VRAM.
@@ -208,6 +214,8 @@ VRAM_PROFILE_LABEL_EN = EN.get(VRAM_PROFILE_TEMPLATE, VRAM_PROFILE_TEMPLATE).for
 LOW_VRAM = VRAM_GB is not None and VRAM_GB < 22
 HD_ALLOWED = not LOW_VRAM
 HD_RES_CHOICES = FULL_HD_CHOICES if HD_ALLOWED else []
+# 24 GB cards default the camera tab to ≈1280×704 in the picture's aspect; smaller cards keep 864×480.
+CAMERA_DEFAULT_RES = list(AUTO_RESOLUTION_CHOICES)[2] if HD_ALLOWED else DEFAULT_RES
 
 
 def ensure_comfy_server():
@@ -225,6 +233,10 @@ def ensure_comfy_server():
         "--fast", "fp8_matrix_mult", "fp16_accumulation",
         "--reserve-vram", VRAM_RESERVE,
         "--vram-headroom", VRAM_HEADROOM,
+        # Otherwise the 32B text encoder stays in VRAM while sampling; a Ref2VA job with a long reference
+        # video then streams the trunk from system RAM and sits at step 0 indefinitely (11 s + 11 s test:
+        # stuck > 5 min at 111 W; with this flag 7.5 min total at 445 W, and small jobs got faster).
+        "--disable-smart-memory",
         "--disable-auto-launch"
     ]
     log_path = os.path.join(BASE_DIR, "comfy_server.log")
@@ -777,6 +789,18 @@ def check_generation_limits(model_name, lora_name, mode, hd, width, height, dura
         other = "ref2va" if trunk == "fl2va" else "fl2va"
         if other in lora_name.lower().replace("ref2v", "ref2va").replace("fl2v", "fl2va"):
             gr.Warning(L('「{0}」看起來是 {1} 專用的 LoRA，這個分頁用的是 {2} 模型，權重會對不上而失效。', lora_name, other.upper(), trunk.upper()))
+
+def check_reference_load(width, height, frame_count, reference_seconds):
+    """Warn before a heavy Ref2VA job: every reference-video frame is attended together with the output,
+    so time grows roughly with the square of the total, and a long job otherwise looks frozen."""
+    ref_frames = sum(round(seconds * 24) for seconds in reference_seconds)
+    load = width * height * (frame_count + ref_frames) * 24 / (VRAM_GB or 24)
+    if not ref_frames or load <= REF_HEAVY_PIXEL_FRAMES:
+        return
+    minutes = REF_MEASURED_MINUTES * (load / REF_MEASURED_PIXEL_FRAMES) ** 2
+    gr.Warning(L('這個組合比較重：{0}×{1} 的成片 {2:.0f} 秒，加上 {3:.0f} 秒參考影片，預計要 {4:.0f} 分鐘左右，請耐心等候。'
+                 '想快一點可以縮短影片長度（參考影片會自動裁成同樣長度）或降低解析度。',
+                 width, height, frame_count / 24, ref_frames / 24, max(1, minutes)))
 
 def model_loader(model_name):
     if model_name.endswith(".gguf"):
@@ -1595,15 +1619,6 @@ def execute_ref_generation(
     if copy_audio and "MiniMaxH3LockAudioLatent" not in requests.get(f"{COMFY_URL}/object_info/MiniMaxH3LockAudioLatent", timeout=10).json():
         raise gr.Error(L("後端尚未載入 TimelineDirector 的音軌鎖定節點。請執行 restart_webui.bat 後再試。"))
 
-    progress(0.08, desc=L("正在整理參考影片（轉 24 fps、最長 15 秒）..."))
-    prepared = [prepare_reference_video(path) for path in video_files]
-    video_items = [(path, bool(use_video_audio and has_audio)) for path, has_audio, _ in prepared]
-    labels = reference_labels(image_files, video_items, audio_files)
-    missing = [label for label, _, _ in labels if label.lower() not in prompt.lower()]
-    if warn_missing and missing:
-        escaped = [label.replace("<", "＜").replace(">", "＞") for label in missing]
-        gr.Warning(L("提示詞沒有提到：{0}。沒指定用途時，模型會自己決定怎麼用這些素材。", "、".join(escaped)))
-
     if target_frames is not None:
         frame_count = snap_h3_length(target_frames)
     elif copy_audio:
@@ -1614,9 +1629,20 @@ def execute_ref_generation(
     else:
         frame_count = snap_h3_length(round(duration * 24))
 
+    progress(0.08, desc=L("正在整理參考影片（轉 24 fps、裁到與成片同長）..."))
+    # Reference frames past the end of the output only add load, so every reference video is cut to the target length.
+    prepared = [prepare_reference_video(path, frame_count / 24) for path in video_files]
+    video_items = [(path, bool(use_video_audio and has_audio)) for path, has_audio, _ in prepared]
+    labels = reference_labels(image_files, video_items, audio_files)
+    missing = [label for label, _, _ in labels if label.lower() not in prompt.lower()]
+    if warn_missing and missing:
+        escaped = [label.replace("<", "＜").replace(">", "＞") for label in missing]
+        gr.Warning(L("提示詞沒有提到：{0}。沒指定用途時，模型會自己決定怎麼用這些素材。", "、".join(escaped)))
+
     source = prepared[0][0] if prepared else (image_files[0] if image_files else None)
     width, height = resolve_resolution(resolution_str, source)
     check_generation_limits(model_options["ref2va_model"], model_options["lora_name"], turbo, False, width, height, duration, "ref2va")
+    check_reference_load(width, height, frame_count, [seconds for _, _, seconds in prepared])
 
     progress(0.12, desc=L("正在上傳參考素材..."))
     image_names = upload_files(image_files)
@@ -3049,7 +3075,9 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                     camera_image = gr.Image(label=T("參考圖片（必要 · 支援 Ctrl+V 貼上）"), type="filepath", height=300, elem_classes=["clipboard-image-target"])
                     camera_prompt = gr.Textbox(label=T("場景／主體補充描述"), value="Preserve the source scene, subject identity, materials and lighting. Only the camera moves.", lines=3)
                     gr.Markdown(T("描述目標主體與風格即可，避免加入和 3D 軌跡相反的運鏡指令。"))
-                    camera_res = gr.Dropdown(label=T("輸出解析度"), choices=["864 × 480 (16:9)", "960 × 544 (16:9)", "480 × 864 (9:16)"], value="864 × 480 (16:9)")
+                    # Up to the official 1344×768 single pass (the camera graph has no HD two-pass); auto follows the picture.
+                    camera_res = gr.Dropdown(label=T("輸出解析度"), choices=choices([*AUTO_RESOLUTION_CHOICES, *BASE_RES_CHOICES]),
+                                             value=CAMERA_DEFAULT_RES, info=T(CAMERA_RES_INFO))
                     camera_turbo = gr.Dropdown(label=T("採樣模式"), choices=choices(SAMPLING_MODES), value=MODE_TURBO_LORA)
                     camera_seed = gr.Number(label=T("隨機種子 (-1 為隨機)"), value=-1, precision=0)
                     camera_btn = gr.Button(T("🎥 按 3D 軌跡生成影音"), variant="primary")

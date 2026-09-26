@@ -455,7 +455,11 @@ EN = {
     "✅ 已填入「共同設定」與「故事」，按 ① 拆成分鏡表即可。": "✅ Filled in the shared setting and the story — press ① to split it into shots.",
     "上傳圖片後直接在上面畫（右側工具列可換顏色、粗細、橡皮擦）": "Upload a picture, then draw on it (the toolbar changes color, size and eraser)",
     "描述圖片中人物或場景如何運動，以及所搭配的聲音或音效...": "Describe how the people or scene in the pictures move, and the sounds that go with it...",
-    "正在整理參考影片（轉 24 fps、最長 15 秒）...": "Preparing reference videos (24 fps, up to 15 s)...",
+    "自動：依參考圖比例。最高到官方上限 1344×768；要更高請生成後用「🔍 放大」。":
+        "Auto: follows the reference picture's aspect ratio. Up to the official 1344×768; for more, upscale afterwards in 🔍 Upscale.",
+    "正在整理參考影片（轉 24 fps、裁到與成片同長）...": "Preparing reference videos (24 fps, cut to the output length)...",
+    "這個組合比較重：{0}×{1} 的成片 {2:.0f} 秒，加上 {3:.0f} 秒參考影片，預計要 {4:.0f} 分鐘左右，請耐心等候。想快一點可以縮短影片長度（參考影片會自動裁成同樣長度）或降低解析度。":
+        "This is a heavy combination: a {2:.0f} s {0}×{1} output plus {3:.0f} s of reference video should take about {4:.0f} minutes, so please be patient. To speed it up, shorten the video (reference videos are cut to the same length) or lower the resolution.",
     "🌟 Singularity HDR 動作畫質增強 (推薦)": "🌟 Singularity HDR motion and quality boost (recommended)",
     "🌟【Singularity 奇點】HDR動作微調 (推薦)": "🌟 [Singularity] HDR motion fine-tune (recommended)",
     "🏠 場景參考：每個鏡頭都照圖中的建築／空間（最多 3 張）": "🏠 Scene reference: every shot follows the building / space in the pictures (up to 3)",
