@@ -78,7 +78,7 @@ Krea2 图片风格 LoRA：
 缺少模型的分页会直接告诉你要选哪个数字。
 
 **🔞 成人向社区模型（18 岁以上，自行下载）**：安装程序不会下载。10Eros-Max 与 DaSiWa 去哪里下载、放在哪个文件夹、
-怎么在面板中选用，请看 **[NSFW_MODELS.md](NSFW_MODELS.md)**（繁体中文／英文）。
+怎么在面板中选用，请看 **[NSFW_MODELS.zh-CN.md](NSFW_MODELS.zh-CN.md)**。
 
 各分页的详细说明（繁体中文）：[RTX4090_LOCAL.md](RTX4090_LOCAL.md)。
 

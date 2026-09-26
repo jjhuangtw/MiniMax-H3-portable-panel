@@ -88,7 +88,7 @@ Prefer to do it by hand, or already have ComfyUI portable? Use the three manual 
 A tab whose model is missing tells you which number to pick.
 
 **🔞 NSFW community models (18+, download them yourself)**: the installers never fetch them. Where to download
-10Eros-Max and DaSiWa, which folder to put them in, and how to pick them in the panel: **[NSFW_MODELS.md](NSFW_MODELS.md)**.
+10Eros-Max and DaSiWa, which folder to put them in, and how to pick them in the panel: **[NSFW_MODELS.en.md](NSFW_MODELS.en.md)**.
 
 Detailed per-tab notes (Traditional Chinese): [RTX4090_LOCAL.md](RTX4090_LOCAL.md).
 

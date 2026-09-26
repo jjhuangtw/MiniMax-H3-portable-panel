@@ -72,10 +72,26 @@ def L(zh, *args, **kwargs):
 
 
 def table(rows, headers):
-    """A Dataframe value with plain translated headers. Returning bare rows makes Gradio reuse the
-    component's T() headers, which are not translated inside a value update and show as raw markers."""
+    """A Dataframe value with plain headers in the request language. Gradio never translates Dataframe
+    headers (T() markers show up raw), so tables always carry translated plain-text headers."""
     import pandas as pd
     return pd.DataFrame(list(rows or []), columns=[L(h) for h in headers])
+
+
+_tables = []                    # (Dataframe, Chinese headers) re-headed on page load
+
+
+def dataframe(headers, **kwargs):
+    """gr.Dataframe with plain Chinese headers; bind_tables() swaps in the viewer's language on load."""
+    component = gr.Dataframe(headers=list(headers), **kwargs)
+    _tables.append((component, list(headers)))
+    return component
+
+
+def bind_tables(demo):
+    """Call once after the UI is built: each registered table starts empty with translated headers."""
+    for component, headers in _tables:
+        demo.load(lambda h=headers: table([], h), None, component, queue=False)
 
 
 def build_i18n():

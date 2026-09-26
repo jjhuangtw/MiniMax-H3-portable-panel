@@ -7,6 +7,7 @@ import re
 
 import gradio as gr
 from ui_i18n import L, T, choices
+from ui_i18n import dataframe as localized_dataframe
 from ui_i18n import table as localized_table
 from zhconv import convert
 
@@ -309,7 +310,7 @@ def add_ref_prompt_builder(prompt_box, labels_state, audio_mode_box):
             "- `<Subject N>` 是從素材抽出來的人、場景、服裝；只有當圖片本身就是某一格畫面（例如首幀）時，才單獨定義 `<Picture N>`。")
         )
         fill = gr.Button(T("依上傳素材產生表格"))
-        table = gr.Dataframe(headers=[T(h) for h in REF_COLUMNS], datatype=["str"] * 5, column_count=(5, "fixed"), interactive=True, wrap=True)
+        table = localized_dataframe(REF_COLUMNS, datatype=["str"] * 5, column_count=(5, "fixed"), interactive=True, wrap=True)
         task_types = gr.CheckboxGroup(label=T("任務類型（summary 開頭）"), choices=TASK_TYPES, value=["reference generation"])
         summary = gr.Textbox(label=T("摘要 summary（英文一小段）"), lines=2)
         style = gr.Textbox(label=T("風格開場句（英文，放在 [Shot 1] 之前）"), placeholder="The target video is live-action and photorealistic, with soft daylight.")

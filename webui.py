@@ -17,6 +17,8 @@ import websocket
 import gradio as gr
 from ui_i18n import L, T, TOGGLE_JS, build_i18n, choices
 from ui_i18n import app_kwargs as i18n_app_kwargs
+from ui_i18n import bind_tables
+from ui_i18n import dataframe as localized_dataframe
 from ui_i18n import table as localized_table
 from i18n_en import EN
 import re
@@ -3104,7 +3106,7 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                 story_turbo = gr.Dropdown(label=T("採樣模式"), choices=choices(SAMPLING_MODES), value=MODE_TURBO_LORA)
             wire_prompt_assistant(story_assist, [story_setting, story_text], story_seconds=story_seconds)
             plan_btn = gr.Button(T("① 自動拆分分鏡"), variant="secondary")
-            shot_table = gr.Dataframe(headers=[T(h) for h in STORY_COLUMNS], datatype=["number", "str", "str", "str", "number", "str"], interactive=True, wrap=True)
+            shot_table = localized_dataframe(STORY_COLUMNS, datatype=["number", "str", "str", "str", "number", "str"], interactive=True, wrap=True)
             render_btn = gr.Button(T("② 批次渲染並自動剪接"), variant="primary", size="lg")
             studio_output = gr.Video(label=T("完整成片"), interactive=False, height=520)
             story_cat.change(lambda c: gr.Dropdown(choices=choices(story_template_names(c)), value=story_template_names(c)[0]),
@@ -3358,6 +3360,7 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
               [model_fl2va, t2v_res, i2v_res, t2v_turbo, i2v_turbo, camera_turbo, story_turbo],
               [t2v_hd, i2v_hd, t2v_res, i2v_res, t2v_turbo, i2v_turbo, camera_turbo, story_turbo])
     demo.load(ref2va_model_changed, [model_ref2va, ref_turbo, v2v_turbo], [ref_turbo, v2v_turbo, v2v_model])
+    bind_tables(demo)
 
 CLIPBOARD_JS_PATH = os.path.join(BASE_DIR, "clipboard_paste.js")
 try:
