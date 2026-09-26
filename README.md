@@ -96,6 +96,10 @@ Prefer to do it by hand, or already have ComfyUI portable? Use the three manual 
 7 the ✨ AI prompt writer (~5 GB; already included in 1 or 3).
 A tab whose model is missing says which number to pick. 缺模型的分頁會直接告訴你要選哪個數字。
 
+**🔞 NSFW community models (18+, download yourself) / 成人向社群模型（自行下載）** — the installers never fetch
+them. Where to download 10Eros-Max and DaSiWa, which folder to put them in, and how to pick them in the panel:
+**[NSFW_MODELS.md](NSFW_MODELS.md)**. 安裝程式不會下載；下載位置、放哪個資料夾、怎麼在面板選用，請看 **[NSFW_MODELS.md](NSFW_MODELS.md)**。
+
 Full per-tab notes (Traditional Chinese): [RTX4090_LOCAL.md](RTX4090_LOCAL.md).
 
 ## Helper scripts / 常用批次檔
