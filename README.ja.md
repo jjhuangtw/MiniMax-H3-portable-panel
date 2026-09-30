@@ -10,7 +10,7 @@
 日本語のブラウザでは**英語の UI** が表示されます。このページのボタン名・タブ名は英語 UI の表記です。上部の 🌐 ボタンで切り替えると、選択が記憶されます。
 
 **タブ**：Text to Video · Keyframes（FL2VA）· Reference（Ref2VA）· V2V · Lip-sync · SeedVR2 動画アップスケール ·
-Krea2 画像生成 · Qwen-Image 画像編集 · 🖍️ Brush Edit（数本の線を描くと AI が本物の物体として描き直す）· 3D カメラ · Storyboard ·
+Krea2 画像生成 · Qwen-Image 画像編集 · 🖍️ Brush Edit（数本の線を描くと AI が本物の物体として描き直す）· ↔️ Outpaint（画像の外側を描き足して 16:9、9:16 などに広げる）· 3D カメラ · Storyboard ·
 History · 🌐 Prompt site（[ArchiPrompt](https://archi-prompt.com/) を埋め込み。建築・ランドスケープ・インテリアの AI プロンプト）。
 
 **📚 プロンプトライブラリ**：すべての生成タブに、**Krea2 で生成したサムネイル**付きのプロンプト集があります。建築、人物、料理、動物、
@@ -57,7 +57,7 @@ Krea2 画像スタイル LoRA：
 ## インストール：ワンクリック
 
 **いちばん簡単**：**[`setup.bat`](../../raw/main/setup.bat)** をダウンロードし（右クリック ▸ 名前を付けてリンク先を保存）、空き容量が
-約 200 GB あるドライブの**空のフォルダー**に置いて**ダブルクリック**します。ComfyUI portable（v0.36.0 固定）、パネル、H3 のコアモデルを
+約 200 GB あるドライブの**空のフォルダー**に置いて**ダブルクリック**します。ComfyUI portable（v0.38.0 固定）、パネル、H3 のコアモデルを
 ダウンロードし、最後にパネルを起動します。git も 7-Zip も不要です。途中で止まっても、もう一度実行すれば続きから再開します。
 Windows SmartScreen が「認識されないアプリ」と警告した場合は **「詳細情報 ▸ 実行」** をクリックしてください
 （署名のない `.bat` で、下記のファイルをダウンロードするだけです）。
@@ -67,7 +67,7 @@ Windows SmartScreen が「認識されないアプリ」と警告した場合は
 ## インストール：手動 3 ステップ
 
 **1. ComfyUI portable を入手。** [ComfyUI releases](https://github.com/comfyanonymous/ComfyUI/releases) から
-   `ComfyUI_windows_portable_nvidia.7z` をダウンロードし（**最新版**で OK。パネルは v0.36.0 で検証）、[7-Zip](https://www.7-zip.org/)
+   `ComfyUI_windows_portable_nvidia.7z` をダウンロードし（**最新版**で OK。パネルは v0.38.0 で検証）、[7-Zip](https://www.7-zip.org/)
    で展開します。`python_embeded\` と `ComfyUI\` を含むフォルダーができます。
 
 **2. パネルを追加。** このページで **Code ▸ Download ZIP** をクリックして展開し、中の**すべてのファイル**をステップ 1 のフォルダーに
@@ -80,7 +80,8 @@ Windows SmartScreen が「認識されないアプリ」と警告した場合は
 **追加モデル**：**`download_extras.bat`** をダブルクリックし、番号を入力します：
 1 Krea2 画像モデル（🎨 Image タブ、約 19 GB）· 2 Krea2 スタイル LoRA · 3 Qwen-Image-2.1（🖌️ Image Edit タブ、約 17 GB）·
 4 SeedVR2（🔍 Upscale タブ、約 7 GB）· 5 HD 2 パス用アップスケーラー（24 GB GPU）· 6 Heretic テキストエンコーダー ·
-7 ✨ AI プロンプトライター（約 5 GB。1 または 3 を選ぶと含まれます）。
+7 ✨ AI プロンプトライター（約 5 GB。1 または 3 を選ぶと含まれます）·
+8 ↔️ Outpaint タブ用の Fun ControlNet（約 3.8 GB。先に 3 が必要）。
 モデルが足りないタブには、どの番号を選べばよいかが表示されます。
 
 **🔞 成人向けコミュニティモデル（18 歳以上、各自でダウンロード）**：インストーラーはダウンロードしません。10Eros-Max と DaSiWa の
@@ -129,6 +130,7 @@ VRAM の検出が正しくない場合は、コマンドプロンプトで `set 
 | SeedVR2 3B + EMA VAE | 🔍 動画アップスケール | ByteDance Seed — [ByteDance-Seed/SeedVR](https://github.com/ByteDance-Seed/SeedVR) · ComfyUI 用重み：numz [numz/SeedVR2_comfyUI](https://huggingface.co/numz/SeedVR2_comfyUI) |
 | Krea 2 Turbo + スタイル LoRA | 🎨 Image タブ、テンプレートのサムネイル | Krea — ComfyUI 版：Comfy-Org [Comfy-Org/Krea-2](https://huggingface.co/Comfy-Org/Krea-2) |
 | Qwen-Image-2.1 + Qwen3-VL 8B | 🖌️ 画像編集 | Qwen チーム — [Qwen/Qwen-Image-2.1](https://huggingface.co/Qwen/Qwen-Image-2.1) · [Comfy-Org/Qwen-Image-2.1](https://huggingface.co/Comfy-Org/Qwen-Image-2.1) · 任意の GGUF：[AlperKTS](https://huggingface.co/AlperKTS/Qwen-Image-2.1-GGUF)、[abenzerps](https://huggingface.co/abenzerps/Qwen-Image-2.1-GGUF) |
+| Qwen-Image-2.1 Fun ControlNet Union | ↔️ Outpaint | Alibaba PAI — [alibaba-pai/Qwen-Image-2.1-Fun-Controlnet-Union](https://huggingface.co/alibaba-pai/Qwen-Image-2.1-Fun-Controlnet-Union)（[VideoX-Fun](https://github.com/aigc-apps/VideoX-Fun)）· ComfyUI 版：Comfy-Org [Comfy-Org/Qwen-Image-2.1](https://huggingface.co/Comfy-Org/Qwen-Image-2.1) |
 | Qwen3-VL 4B / 8B | ✨ AI プロンプトライター | Qwen チーム — [Comfy-Org/Krea-2](https://huggingface.co/Comfy-Org/Krea-2) と [Comfy-Org/Qwen-Image-2.1](https://huggingface.co/Comfy-Org/Qwen-Image-2.1) 経由 |
 
 ### コード・ツール

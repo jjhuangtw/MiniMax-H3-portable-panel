@@ -37,6 +37,8 @@ import history
 from prompt_builder import (AUDIO_MODE_COPY, AUDIO_MODE_REFERENCE, AUTO_REF_MODES, LABEL_TABLE_EMPTY, add_base_prompt_builder, add_ref_prompt_builder,
                             generate_auto_ref_prompt, label_table, reference_labels, with_keyframe_instruction)
 from camera_controls import CAMERA_WEB, DEFAULT_CAMERA, EDITOR_JS, update_camera_image, apply_camera_graph
+import outpaint
+from PIL import Image
 
 gr.set_static_paths(paths=[str(CAMERA_WEB)])
 
@@ -1320,6 +1322,83 @@ def execute_brush_edit(editor, mode, instruction, res_choice, steps, seed, dit_m
                                    steps, 1.0, seed, "euler", "simple", dit_model, encoder_model, vae_model,
                                    "auto", "default", progress=progress)
 
+# ↔️ 擴圖: Qwen-Image-2.1 text-to-image on the bigger canvas, with the Fun ControlNet Union's inpainting
+# branch keeping the picture (opaque pixels) and redrawing the rest (transparent pixels -> mask 1).
+QWEN_CONTROLNET = "qwen_image_2.1_fun_controlnet_union_int8_convrot.safetensors"
+OUTPAINT_EXTRAS_OPTION = 8
+OUTPAINT_DEFAULT_PROMPT = ("A seamless, natural continuation of the same scene, matching its style, lighting, colors, "
+                           "perspective and level of detail. Photorealistic, high quality.")
+
+def outpaint_models_ready():
+    return QWEN_CONTROLNET in [os.path.basename(f) for f in list_model_files("model_patches", "ModelPatchLoader", "name")]
+
+def build_outpaint_prompt(canvas_name, width, height, prompt_text, steps, strength, seed, dit_model, encoder_model, vae_model):
+    workflow = {
+        "1": {"class_type": "UNETLoader", "inputs": {"unet_name": dit_model, "weight_dtype": "default"}},
+        "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": encoder_model, "type": "qwen_image"}},
+        "3": {"class_type": "VAELoader", "inputs": {"vae_name": vae_model}},
+        "9": {"class_type": "ModelPatchLoader", "inputs": {"name": QWEN_CONTROLNET}},
+        "10": {"class_type": "LoadImage", "inputs": {"image": canvas_name}},
+        "11": {"class_type": "ZImageFunControlnet", "inputs": {
+            "model": ["1", 0], "model_patch": ["9", 0], "vae": ["3", 0], "strength": float(strength),
+            "inpaint_image": ["10", 0], "mask": ["10", 1]}},
+        "4": {"class_type": "QwenImage21Cache", "inputs": {"model": ["11", 0], "device": "auto", "dtype": "default"}},
+        "5": {"class_type": "TextEncodeQwenImage21", "inputs": {
+            "clip": ["2", 0], "prompt": prompt_text, "negative_prompt": "", "resolution": 1024, "vae": ["3", 0]}},
+        "12": {"class_type": "EmptyLatentImage", "inputs": {"width": width, "height": height, "batch_size": 1}},
+        "6": {"class_type": "KSampler", "inputs": {
+            "model": ["4", 0], "positive": ["5", 0], "negative": ["5", 1], "latent_image": ["12", 0],
+            "seed": int(seed), "steps": int(steps), "cfg": 1.0, "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0}},
+        "7": {"class_type": "VAEDecode", "inputs": {"samples": ["6", 0], "vae": ["3", 0]}},
+        "8": {"class_type": "SaveImage", "inputs": {"images": ["7", 0], "filename_prefix": "QwenOutpaint"}},
+    }
+    if dit_model.endswith(".gguf"):
+        workflow["1"] = {"class_type": "UnetLoaderGGUF", "inputs": {"unet_name": dit_model}}
+    return workflow
+
+def execute_outpaint(image, shape, anchor, size, prompt, steps, strength, seed, dit_model, encoder_model, vae_model,
+                     progress=gr.Progress()):
+    if not image:
+        raise gr.Error(L("請先上傳一張圖片（支援 Ctrl+V 貼上）。"))
+    progress(0.05, desc=L("正在連線至 ComfyUI 後端..."))
+    if not ensure_comfy_server():
+        raise gr.Error(L("無法啟動或連線至 ComfyUI 後端引擎，請檢查 8188 埠！"))
+    dit_loader = "UnetLoaderGGUF" if (dit_model or "").endswith(".gguf") else "UNETLoader"
+    dit_model = resolve_backend_file(dit_loader, "unet_name", dit_model, "Qwen-Image 擴散模型", 3)
+    encoder_model = resolve_backend_file("CLIPLoader", "clip_name", encoder_model, "Qwen 文字編碼器", 3)
+    vae_model = resolve_backend_file("VAELoader", "vae_name", vae_model, "Qwen VAE", 3)
+    resolve_backend_file("ModelPatchLoader", "name", QWEN_CONTROLNET, "擴圖 ControlNet", OUTPAINT_EXTRAS_OPTION)
+    try:
+        canvas_path, plan, picture = outpaint.build_canvas(image, shape, anchor, outpaint.SIZES.get(size, 2.0))
+    except ValueError:
+        raise gr.Error(L("這張圖已經是「{0}」的比例，沒有地方可以擴；請改選別的比例，或選「四周各擴大一圈」。", L(shape)))
+    width, height = plan[0], plan[1]
+    if seed is None or seed == -1:
+        seed = random.randint(1, 1000000000000000)
+    progress(0.15, desc=L("正在上傳擴圖畫布（{0}×{1}）...", width, height))
+    canvas_name = upload_image(canvas_path)
+    workflow = build_outpaint_prompt(canvas_name, width, height, (prompt or "").strip() or OUTPAINT_DEFAULT_PROMPT,
+                                     int(steps), float(strength), int(seed), dit_model, encoder_model, vae_model)
+    generated = run_comfy_workflow(workflow, int(steps), progress, "正在載入 Qwen-Image-2.1 與擴圖 ControlNet...",
+                                   "擴圖採樣中", output_node="8", multiple=False)
+    root, _ = os.path.splitext(generated)
+    output = outpaint.paste_back(generated, picture, plan, f"{root}_擴圖.png")
+    history.record("擴圖 Qwen-Image-2.1", prompt or OUTPAINT_DEFAULT_PROMPT, output, resolution=f"{width}×{height}",
+                   seed=int(seed), mode=shape, model=dit_model, encoder=encoder_model)
+    progress(1.0, desc=L("擴圖完成！"))
+    return output
+
+def write_outpaint_prompt(image, shape, anchor, idea, progress=gr.Progress()):
+    """✨ Qwen3-VL looks at the picture and writes one English paragraph describing the whole extended image."""
+    if not image:
+        raise gr.Error(L("請先上傳一張圖片（支援 Ctrl+V 貼上）。"))
+    try:
+        plan = outpaint.plan_canvas(*Image.open(image).size, shape, anchor, 1.0)
+    except ValueError:
+        raise gr.Error(L("這張圖已經是「{0}」的比例，沒有地方可以擴；請改選別的比例，或選「四周各擴大一圈」。", L(shape)))
+    return generate_pro_prompt(pa.KIND_OUTPAINT, pa.outpaint_request(idea, outpaint.direction_text(plan)), "",
+                               images=[image], progress=progress)
+
 def gpu_status_text(note=""):
     try:
         queue = requests.get(f"{COMFY_URL}/queue", timeout=5).json()
@@ -2127,7 +2206,7 @@ PROMPT_LLM_MODELS = [("qwen3vl_8b_int8_convrot.safetensors", "qwen_image"),   # 
                      ("qwen3vl_4b_fp8_scaled.safetensors", "krea2")]          # 🎨 圖片 encoder
 PROMPT_LLM_EXTRAS_OPTION = 7
 PROMPT_LLM_IMAGE_MP = 0.4   # keeps a phone photo from turning into ~10k vision tokens
-PROMPT_LLM_MAX_TOKENS = {pa.KIND_T2VA: 1200, pa.KIND_KEYFRAME: 1200, pa.KIND_IMAGE: 400}
+PROMPT_LLM_MAX_TOKENS = {pa.KIND_T2VA: 1200, pa.KIND_KEYFRAME: 1200, pa.KIND_IMAGE: 400, pa.KIND_OUTPAINT: 400}
 
 def prompt_llm_model():
     available = {os.path.basename(f): f for f in list_model_files("text_encoders", "CLIPLoader", "clip_name")}
@@ -3068,6 +3147,51 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
             brush_to_i2v.click(lambda img: img, [brush_output], [i2v_first], queue=False)
             brush_to_ref.click(lambda img: [img] if img else None, [brush_output], [ref_images], queue=False)
 
+        with gr.Tab(T("↔️ 擴圖")):
+            gr.Markdown(
+                T("### ↔️ 擴圖（Outpaint）：把畫面往外延伸\n"
+                  "1. 上傳一張圖（支援 Ctrl+V 貼上）。\n"
+                  "2. 選要變成的比例、原圖放在哪一邊，例如直式照片選「16:9 橫幅」＋「置中」，左右兩邊會長出新的畫面。\n"
+                  "3. 按「✨ 看圖寫描述」讓 AI 寫好整張圖的描述（也可以在想法欄寫新區域要出現什麼），再按擴圖。原圖部分完全保持不變。\n\n"
+                  "使用「🖌️ 修圖」分頁同一組 Qwen-Image-2.1 模型，加上 Fun ControlNet；RTX 4090 約 2 MP 一張 30 秒左右。"))
+            missing_models_notice(qwen_image_models_ready(), " Qwen-Image-2.1 修圖模型", 3)
+            missing_models_notice(outpaint_models_ready(), " 擴圖 ControlNet", OUTPAINT_EXTRAS_OPTION)
+            with gr.Row():
+                with gr.Column(scale=5):
+                    out_image = gr.Image(label=T("原圖（支援 Ctrl+V 貼上）"), type="filepath", height=360,
+                                         elem_classes=["clipboard-image-target"])
+                    with gr.Row():
+                        out_shape = gr.Dropdown(label=T("擴成什麼比例"), choices=choices(list(outpaint.SHAPES)),
+                                                value=next(iter(outpaint.SHAPES)))
+                        out_anchor = gr.Dropdown(label=T("原圖放在哪裡"), choices=choices(list(outpaint.ANCHORS)),
+                                                 value=next(iter(outpaint.ANCHORS)))
+                    out_idea = gr.Textbox(label=T("新區域要出現什麼（選填，中文就可以）"), lines=2,
+                                          placeholder=T("例如：左邊延伸出一整排落地窗，右邊是木質書櫃"))
+                    out_write = gr.Button(T("✨ 看圖寫描述"), variant="secondary")
+                    out_prompt = gr.Textbox(label=T("整張圖的描述（英文最好；留空會用通用描述）"), lines=5,
+                                            placeholder=T("描述擴完之後的整張圖：原本畫面的內容，加上新區域延伸出來的東西。"))
+                    with gr.Row():
+                        out_size = gr.Dropdown(label=T("輸出大小"), choices=choices(list(outpaint.SIZES)),
+                                               value=list(outpaint.SIZES)[1 if HD_ALLOWED else 0])
+                        out_steps = gr.Slider(label=T("採樣步數"), minimum=10, maximum=50, value=25, step=1)
+                        out_strength = gr.Slider(label=T("ControlNet 強度"), minimum=0.5, maximum=1.5, value=1.0, step=0.05)
+                        out_seed = gr.Number(label=T("隨機種子 (-1 為隨機)"), value=-1, precision=0)
+                    out_btn = gr.Button(T("↔️ 開始擴圖"), variant="primary", size="lg")
+                with gr.Column(scale=5):
+                    out_output = gr.Image(label=T("擴圖結果"), type="filepath", height=560, interactive=False)
+                    with gr.Row():
+                        out_again = gr.Button(T("🔄 用結果再擴一次"), variant="secondary")
+                        out_to_i2v = gr.Button(T("📋 套用到 🖼️ 首尾幀 (首幀)"), variant="secondary")
+                        out_to_ref = gr.Button(T("📋 套用到 🎞️ 參考"), variant="secondary")
+            out_write.click(write_outpaint_prompt, [out_image, out_shape, out_anchor, out_idea], [out_prompt])
+            out_btn.click(execute_outpaint,
+                          [out_image, out_shape, out_anchor, out_size, out_prompt, out_steps, out_strength, out_seed,
+                           qwen_model, qwen_encoder, qwen_vae],
+                          [out_output])
+            out_again.click(lambda img: img, [out_output], [out_image], queue=False)
+            out_to_i2v.click(lambda img: img, [out_output], [i2v_first], queue=False)
+            out_to_ref.click(lambda img: [img] if img else None, [out_output], [ref_images], queue=False)
+
         with gr.Tab(T("🎥 攝影機")):
             gr.Markdown(T("### 參考圖片 → 3D 軌跡 → FL2VA Q4 影音\n上傳圖片後，拖曳紫色攝影機設定環繞角度與仰角，滾輪調整距離；在時間軸選取關鍵幀後修改位置。▶ 只預覽運鏡，按下生成按鈕才會生成影片。\n\n此模式固定原始場景，讓攝影機移動。軌跡會轉為 H3 提示詞，實際角度與時間可能有偏差。"))
             with gr.Row():
@@ -3322,7 +3446,7 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                 "4. 🔍 放大分頁：SeedVR2（約 7 GB）　5. 高清二次採樣放大模型（僅 24GB）　6. Heretic 文字編碼器\n"
                 "7. ✨ AI 專業提示詞模型（Qwen3-VL 4B，約 5 GB；已下載 1 或 3 就不用再下載）\n\n"
                 "### 🖥️ 架構\n"
-                "- 後端：ComfyUI v0.36.0（本機 http://127.0.0.1:8188 可開原生節點畫布）\n"
+                "- 後端：ComfyUI v0.38.0（本機 http://127.0.0.1:8188 可開原生節點畫布）\n"
                 "- 影音模型：MiniMax H3 FL2VA／Ref2VA Q4_K_M GGUF（預設）、Qwen3-VL 32B NVFP4 文字編碼器、H3 影音 VAE（有 INT8 版時自動使用）\n"
                 "- 加速：`minimax_h3_fl2v_turbo_8step_v1.0`、`minimax_h3_ref2v_turbo_4step_v0.1` Turbo LoRA")
             )

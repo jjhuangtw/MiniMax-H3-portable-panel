@@ -12,6 +12,7 @@ KIND_T2VA = "t2va"        # 🎬 文生: three official fields
 KIND_KEYFRAME = "i2va"    # 🖼️ 首尾幀: body that starts from <Picture 1> (and lands on Picture 2)
 KIND_STORY = "story"      # 📝 編劇: 共同設定 + 畫面｜運鏡｜聲音 lines, in Traditional Chinese
 KIND_IMAGE = "image"      # 🎨 圖片: one English paragraph for Krea2
+KIND_OUTPAINT = "outpaint"  # ↔️ 擴圖: one English paragraph describing the whole extended picture
 
 STYLE_CHOICES = {
     "自動（依想法判斷）": "",
@@ -99,13 +100,24 @@ Layout:
 - Shots follow each other in time and keep the same people and place. Dialogue, if the user wants it, goes in 畫面內容 as: 她 (S1) 說：<d>[Chinese] 台詞</d>
 - {_SAFETY_RULE}""",
     KIND_IMAGE: """You write prompts for the Krea2 image model. Turn the user's idea (often short, often in Chinese) into ONE English paragraph of 60 to 120 words describing a single still image: subject, age, hair and clothing for people, pose, setting, lighting, lens and framing, colors and mood, then material and texture details. Output ONLY the paragraph: no title, no Markdown, no lists. Do not add real people, brands, logos or text the user did not ask for.""",
+    KIND_OUTPAINT: """You write prompts for Qwen-Image outpainting. The attached picture will be placed on a larger canvas and the model paints the new area around it. Write ONE English paragraph of 50 to 110 words that describes the WHOLE final image: first what the picture already shows (subject, setting, style, lighting, colors), then what naturally continues into the new area on the given sides, keeping the same perspective, horizon, light direction and style. Follow the user's wish for the new area if one is given. Output ONLY the paragraph: no title, no Markdown, no lists. Do not add real people, brands, logos or text that are not in the picture or the user's wish.""",
 }
+
+
+def outpaint_request(wish, sides):
+    """User message for KIND_OUTPAINT: where the canvas grows, plus the optional wish for the new area."""
+    wish = (wish or "").strip()
+    return (f"The canvas grows on these sides: {sides}."
+            + (f"\n\nWhat should appear in the new area: {wish}" if wish else
+               "\n\nContinue the existing scene naturally; do not add new main subjects."))
 
 
 def build_user_message(kind, idea, style="", seconds=None, shots=None, shot_seconds=None, images=0):
     picture_only = ("Bring the attached picture to life as a video. Keep only the people, animals and objects that "
                     "are in the picture; the motion comes from natural movement such as light, wind, water, people "
                     "already in it, and one slow camera move.")
+    if kind == KIND_OUTPAINT:
+        return idea     # outpaint_request() already wrote the whole message
     parts = [(idea or "").strip() or picture_only]
     if kind == KIND_IMAGE:
         if images:

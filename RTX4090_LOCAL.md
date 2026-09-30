@@ -4,7 +4,11 @@
 
 ## ComfyUI 版本
 
-本面板在 **ComfyUI v0.36.0** 上實測通過（FL2VA／Ref2VA 路徑皆正常）。升級到 v0.36.0 時，除了 `requirements.txt` 顯眼處列的套件，還要一併升級 **`comfy-aimdo` 到 0.5.3**（`pip install "comfy-aimdo==0.5.3"`）——它是 v0.36.0 新記憶體圖編譯器的原生相依，若停在 0.5.2，每次生成會在收尾階段丟 `'MallocGraph' object has no attribute 'rogue_count'` 而失敗。連同要對齊的還有 `comfyui-frontend-package==1.52.7`、`comfyui-workflow-templates==0.11.62`、`comfy-kitchen==0.2.34`。升級後重啟後端才會生效。
+本面板在 **ComfyUI v0.38.0** 上實測通過（2026-09-30：文生 4 秒、Ref2VA 單圖 4 秒、擴圖皆正常）。`setup.bat` 下載的 portable 也固定為 v0.38.0。
+
+- 從 v0.37.0 升級：`ComfyUI` 資料夾是 git checkout（detached HEAD），做法是 `git stash` → `git fetch --tags` → `git checkout v0.38.0` → `git stash pop`（保留本機 `main.py`／`app/logger.py` 的 UTF-8 主控台修正），再用 `python_embeded\python.exe -m pip install -r requirements.txt`。v0.38.0 對齊的套件：`comfyui-frontend-package==1.53.6`、`comfyui-workflow-templates==0.11.70`、`comfy-kitchen==0.2.36`（`comfy-aimdo` 仍 0.5.5）；不再需要 torchaudio。升級前的 commit 記在 `comfy_prev_commit.txt`（`73c9bad4`，可 `git checkout` 退回）。
+- v0.38.0 與本面板相關的更新：Qwen-Image 2.1 Fun ControlNet Union 支援（↔️ 擴圖需要）、MiniMax-H3 Fun-ControlNet-Union 2.0、H3 VAE 分塊接縫與 offload 當機修正、SeedVR2 加速、TextGenerate 新增 system_prompt。
+- 舊紀錄：升級到 v0.36.0 時要一併把 `comfy-aimdo` 升到 0.5.3，否則收尾階段會丟 `'MallocGraph' object has no attribute 'rogue_count'`。
 
 ## H3 快速生成
 
@@ -99,6 +103,14 @@
 - 做法：沿用「🖌️ 修圖」的 Qwen-Image-2.1 與其模型設定，把**原圖當 `<image1>`、畫了筆畫的圖當 `<image2>`**，提示詞要求依 `<image2>` 筆畫的位置修改 `<image1>`、其餘不變、結果不得留筆畫。實測只送畫了筆畫的單張圖時，新物件會偏離筆畫位置；兩張一起送則準確落在筆畫上。
 - 沒畫筆畫就按生成會提示；結果可按「🔄 用結果繼續畫」接著改下一處，或套用到首尾幀／參考分頁。RTX 4090：1024 解析度、25 步每張約 17～26 秒（第一次載入模型較久）。
 - 速度主要取決於「輸出解析度」而不是模型大小：預設把長邊縮到約 1024；選「0 原圖像素」時 2400×1792（4.3 MP）的照片每步約 8 秒、整張約 3.5 分鐘。舊版把預設誤判成 0（標籤「1024」裡有 0），修圖與筆刷修圖都受影響，現已改為依標籤精確對應。
+
+## ↔️ 擴圖（Outpaint）
+
+- 上傳一張圖，選「擴成什麼比例」（16:9、9:16、1:1、4:3、3:4、21:9，或「四周各擴大一圈」）與「原圖放在哪裡」（置中、靠左／右／上／下），按「✨ 看圖寫描述」讓 Qwen3-VL 寫出整張圖的英文描述（想法欄可指定新區域要出現什麼），再按「↔️ 開始擴圖」。
+- 模型：「🖌️ 修圖」同一組 Qwen-Image-2.1（int8 DiT＋Qwen3-VL 8B＋VAE），加上 `ComfyUI/models/model_patches/qwen_image_2.1_fun_controlnet_union_int8_convrot.safetensors`（3,779,298,944 bytes，SHA-256 `07aa9615…01b3715d`，`Comfy-Org/Qwen-Image-2.1` 版本 `cb504a40`；原始模型 `alibaba-pai/Qwen-Image-2.1-Fun-Controlnet-Union`）。`download_qwen_controlnet.py`／`download_extras.bat` 選項 8 可續傳並核對。需要 ComfyUI v0.38.0 以上。
+- 做法（`outpaint.py`）：原圖縮放後放到約 1／2／4 MP 的新畫布（邊長取 16 的倍數），整張以 RGBA PNG 上傳：不透明＝保留、透明＝重畫（`LoadImage` 的 MASK 輸出）。保留區在「往外擴」的邊內縮約短邊 2% 讓接縫也被重畫。工作流程：`UNETLoader` → `ZImageFunControlnet`（inpaint_image＋mask，強度 1.0）→ `QwenImage21Cache` → `KSampler`（25 步、CFG 1、euler、simple，畫布用 `EmptyLatentImage`）。生成後把原圖像素以柔邊貼回，原圖部分完全不變，另存 `QwenOutpaint_*_擴圖.png`。
+- 實測（RTX 4090，1024×1536 直式人像）：16:9 置中 → 1888×1056，33 秒；9:16 靠下往上擴 → 1056×1888，25 秒（寫描述 5 秒）。沙發、窗戶、植物、天花板都順著原場景延伸，接縫看不出來。
+- 原圖已經是所選比例時會提示改選別的比例或「四周各擴大一圈」。
 
 ## 🌐 繁體中文／English 介面切換
 

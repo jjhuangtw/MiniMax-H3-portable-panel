@@ -8,7 +8,7 @@
 **介面語言**：自動跟隨瀏覽器（中文瀏覽器顯示繁體中文，其他顯示英文），也可以按上方 🌐 按鈕切換，會記住你的選擇。
 
 **分頁**：文生影音 · 首尾幀（FL2VA）· 參考影音（Ref2VA）· V2V · 對嘴 · SeedVR2 影片放大 · Krea2 圖片生成 ·
-Qwen-Image 修圖 · 🖍️ 筆刷修圖（畫幾筆，AI 把筆畫變成真實物件）· 3D 攝影機 · 編劇分鏡 · 紀錄 ·
+Qwen-Image 修圖 · 🖍️ 筆刷修圖（畫幾筆，AI 把筆畫變成真實物件）· ↔️ 擴圖（把畫面往外延伸成 16:9、9:16 等比例）· 3D 攝影機 · 編劇分鏡 · 紀錄 ·
 🌐 提示詞網站（內嵌 [ArchiPrompt](https://archi-prompt.com/)，建築／景觀／室內設計 AI 提示詞）。
 
 **📚 提示詞範本庫**：每個生成分頁都有可瀏覽的現成提示詞，附 **Krea2 產生的縮圖**，分類有建築、人物、美食、動物、自然、產品、交通、運動、
@@ -52,7 +52,7 @@ Krea2 圖片風格 LoRA：
 ## 安裝：一鍵
 
 **最省事**：下載 **[`setup.bat`](../../raw/main/setup.bat)**（右鍵 ▸ 另存連結），放進一個**空資料夾**（所在磁碟需約 200 GB），
-**雙擊**它。它會下載 ComfyUI portable（固定 v0.36.0）、面板與核心 H3 模型，最後開啟面板，全程免 git、免 7-Zip。
+**雙擊**它。它會下載 ComfyUI portable（固定 v0.38.0）、面板與核心 H3 模型，最後開啟面板，全程免 git、免 7-Zip。
 中斷了再執行一次即可續傳。Windows SmartScreen 若跳出「無法辨識的應用程式」，按 **「其他資訊 ▸ 仍要執行」**
 （這是未簽章的 `.bat`，只會下載下列檔案）。
 
@@ -61,7 +61,7 @@ Krea2 圖片風格 LoRA：
 ## 安裝：手動三步
 
 **1. 取得 ComfyUI portable。** 從 [ComfyUI releases](https://github.com/comfyanonymous/ComfyUI/releases) 下載
-   `ComfyUI_windows_portable_nvidia.7z`（用**最新版**即可，面板在 v0.36.0 測試），用 [7-Zip](https://www.7-zip.org/) 解壓，
+   `ComfyUI_windows_portable_nvidia.7z`（用**最新版**即可，面板在 v0.38.0 測試），用 [7-Zip](https://www.7-zip.org/) 解壓，
    會得到一個含 `python_embeded\` 與 `ComfyUI\` 的資料夾。
 
 **2. 加入面板。** 在本頁按 **Code ▸ Download ZIP**，解壓後把裡面**所有檔案**複製進步驟 1 的資料夾，讓 `install.bat` 和
@@ -73,7 +73,8 @@ Krea2 圖片風格 LoRA：
 **選用模型**：雙擊 **`download_extras.bat`**，輸入數字：
 1 Krea2 圖片模型（🎨 分頁，約 19 GB）· 2 Krea2 風格 LoRA · 3 Qwen-Image-2.1（🖌️ 修圖分頁，約 17 GB）·
 4 SeedVR2（🔍 放大分頁，約 7 GB）· 5 高清二次採樣放大模型（24 GB 顯卡）· 6 Heretic 文字編碼器 ·
-7 ✨ AI 專業提示詞（約 5 GB；選 1 或 3 時已包含）。
+7 ✨ AI 專業提示詞（約 5 GB；選 1 或 3 時已包含）·
+8 ↔️ 擴圖分頁的 Fun ControlNet（約 3.8 GB，需先裝 3）。
 缺模型的分頁會直接告訴你要選哪個數字。
 
 **🔞 成人向社群模型（18 歲以上，自行下載）**：安裝程式不會下載。10Eros-Max 與 DaSiWa 去哪裡下載、放在哪個資料夾、
@@ -118,6 +119,7 @@ Krea2 圖片風格 LoRA：
 | SeedVR2 3B + EMA VAE | 🔍 影片放大 | ByteDance Seed — [ByteDance-Seed/SeedVR](https://github.com/ByteDance-Seed/SeedVR) · ComfyUI 權重：numz [numz/SeedVR2_comfyUI](https://huggingface.co/numz/SeedVR2_comfyUI) |
 | Krea 2 Turbo + 風格 LoRA | 🎨 圖片分頁、範本縮圖 | Krea — ComfyUI 打包：Comfy-Org [Comfy-Org/Krea-2](https://huggingface.co/Comfy-Org/Krea-2) |
 | Qwen-Image-2.1 + Qwen3-VL 8B | 🖌️ 修圖 | Qwen 團隊 — [Qwen/Qwen-Image-2.1](https://huggingface.co/Qwen/Qwen-Image-2.1) · [Comfy-Org/Qwen-Image-2.1](https://huggingface.co/Comfy-Org/Qwen-Image-2.1) · 選用 GGUF：[AlperKTS](https://huggingface.co/AlperKTS/Qwen-Image-2.1-GGUF)、[abenzerps](https://huggingface.co/abenzerps/Qwen-Image-2.1-GGUF) |
+| Qwen-Image-2.1 Fun ControlNet Union | ↔️ 擴圖 | Alibaba PAI — [alibaba-pai/Qwen-Image-2.1-Fun-Controlnet-Union](https://huggingface.co/alibaba-pai/Qwen-Image-2.1-Fun-Controlnet-Union)（[VideoX-Fun](https://github.com/aigc-apps/VideoX-Fun)）· ComfyUI 打包：Comfy-Org [Comfy-Org/Qwen-Image-2.1](https://huggingface.co/Comfy-Org/Qwen-Image-2.1) |
 | Qwen3-VL 4B / 8B | ✨ AI 專業提示詞 | Qwen 團隊 — 經由 [Comfy-Org/Krea-2](https://huggingface.co/Comfy-Org/Krea-2) 與 [Comfy-Org/Qwen-Image-2.1](https://huggingface.co/Comfy-Org/Qwen-Image-2.1) |
 
 ### 程式提供者

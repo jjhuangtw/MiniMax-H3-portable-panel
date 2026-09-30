@@ -11,7 +11,7 @@ The 🌐 button at the top switches and remembers your choice.
 
 **Tabs**: Text to Video · Keyframes (FL2VA) · Reference (Ref2VA) · V2V · Lip-sync · SeedVR2 video upscale ·
 Krea2 image generation · Qwen-Image editing · 🖍️ Brush Edit (scribble a few strokes and the AI redraws them as real
-objects) · 3D camera · Storyboard · History · 🌐 Prompt site (embedded [ArchiPrompt](https://archi-prompt.com/),
+objects) · ↔️ Outpaint (extend a picture past its borders to 16:9, 9:16 and more) · 3D camera · Storyboard · History · 🌐 Prompt site (embedded [ArchiPrompt](https://archi-prompt.com/),
 AI prompts for architecture, landscape and interiors).
 
 **📚 Prompt library**: every generation tab has a browsable library of ready-to-use prompts with **Krea2-rendered
@@ -60,7 +60,7 @@ Krea2 image style LoRAs:
 ## Install — one click
 
 **Easiest:** download **[`setup.bat`](../../raw/main/setup.bat)** (right-click ▸ Save link as…), put it in an
-**empty folder** on a drive with ~200 GB free, and **double-click it**. It downloads ComfyUI portable (pinned v0.36.0),
+**empty folder** on a drive with ~200 GB free, and **double-click it**. It downloads ComfyUI portable (pinned v0.38.0),
 the panel and the core H3 models, then launches the panel — no git, no 7-Zip needed. It's resumable: if a download
 drops, run it again. Windows SmartScreen may warn about an unrecognized app — click **More info ▸ Run anyway** (it's
 an unsigned `.bat` that only downloads the files below).
@@ -71,7 +71,7 @@ Prefer to do it by hand, or already have ComfyUI portable? Use the three manual 
 
 **1. Get ComfyUI portable.** Download `ComfyUI_windows_portable_nvidia.7z` from the
    [ComfyUI releases](https://github.com/comfyanonymous/ComfyUI/releases) (use the **latest**; the panel is tested on
-   v0.36.0) and extract it with [7-Zip](https://www.7-zip.org/). You get a folder containing `python_embeded\` and
+   v0.38.0) and extract it with [7-Zip](https://www.7-zip.org/). You get a folder containing `python_embeded\` and
    `ComfyUI\`.
 
 **2. Add the panel.** On this GitHub page click **Code ▸ Download ZIP**, extract it, and copy everything inside into
@@ -84,7 +84,8 @@ Prefer to do it by hand, or already have ComfyUI portable? Use the three manual 
 **Optional models**: double-click **`download_extras.bat`** and type a number:
 1 Krea2 image model for the 🎨 Image tab (~19 GB) · 2 Krea2 style LoRAs · 3 Qwen-Image-2.1 for the 🖌️ Image Edit tab
 (~17 GB) · 4 SeedVR2 for the 🔍 Upscale tab (~7 GB) · 5 HD two-pass upscaler (24 GB cards) · 6 Heretic text encoder ·
-7 the ✨ AI prompt writer (~5 GB; already included in 1 or 3).
+7 the ✨ AI prompt writer (~5 GB; already included in 1 or 3) ·
+8 the Fun ControlNet for the ↔️ Outpaint tab (~3.8 GB; needs 3).
 A tab whose model is missing tells you which number to pick.
 
 **🔞 NSFW community models (18+, download them yourself)**: the installers never fetch them. Where to download
@@ -133,6 +134,7 @@ their pages, star their repos and follow their licenses.
 | SeedVR2 3B + EMA VAE | 🔍 video upscale | ByteDance Seed — [ByteDance-Seed/SeedVR](https://github.com/ByteDance-Seed/SeedVR) · ComfyUI weights by numz [numz/SeedVR2_comfyUI](https://huggingface.co/numz/SeedVR2_comfyUI) |
 | Krea 2 Turbo + style LoRAs | 🎨 Image tab, template thumbnails | Krea — ComfyUI packaging by Comfy-Org [Comfy-Org/Krea-2](https://huggingface.co/Comfy-Org/Krea-2) |
 | Qwen-Image-2.1 + Qwen3-VL 8B | 🖌️ image editing | Qwen team — [Qwen/Qwen-Image-2.1](https://huggingface.co/Qwen/Qwen-Image-2.1) · [Comfy-Org/Qwen-Image-2.1](https://huggingface.co/Comfy-Org/Qwen-Image-2.1) · optional GGUF by [AlperKTS](https://huggingface.co/AlperKTS/Qwen-Image-2.1-GGUF) and [abenzerps](https://huggingface.co/abenzerps/Qwen-Image-2.1-GGUF) |
+| Qwen-Image-2.1 Fun ControlNet Union | ↔️ Outpaint | Alibaba PAI — [alibaba-pai/Qwen-Image-2.1-Fun-Controlnet-Union](https://huggingface.co/alibaba-pai/Qwen-Image-2.1-Fun-Controlnet-Union) ([VideoX-Fun](https://github.com/aigc-apps/VideoX-Fun)) · ComfyUI packaging by Comfy-Org [Comfy-Org/Qwen-Image-2.1](https://huggingface.co/Comfy-Org/Qwen-Image-2.1) |
 | Qwen3-VL 4B / 8B | ✨ AI prompt writer | Qwen team — via [Comfy-Org/Krea-2](https://huggingface.co/Comfy-Org/Krea-2) and [Comfy-Org/Qwen-Image-2.1](https://huggingface.co/Comfy-Org/Qwen-Image-2.1) |
 
 ### Code & tools
