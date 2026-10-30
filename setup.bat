@@ -13,7 +13,7 @@ where curl >nul 2>nul || goto :notools
 where tar  >nul 2>nul || goto :notools
 
 set "PORT=ComfyUI_windows_portable"
-set "COMFY_7Z=https://github.com/comfyanonymous/ComfyUI/releases/download/v0.38.0/ComfyUI_windows_portable_nvidia.7z"
+set "COMFY_7Z=https://github.com/comfyanonymous/ComfyUI/releases/download/v0.41.0/ComfyUI_windows_portable_nvidia.7z"
 set "PANEL_ZIP=https://github.com/jjhuangtw/MiniMax-H3-portable-panel/archive/refs/heads/main.zip"
 
 echo.

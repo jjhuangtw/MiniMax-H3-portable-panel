@@ -86,8 +86,9 @@ SEEDVR2_RES_CHOICES = {"720p（短邊 720）": 720, "1080p（短邊 1080）": 10
 # Turbo LoRA vs a checkpoint that already carries its own distillation: the two must never stack.
 MODE_TURBO_LORA = "Turbo LoRA・4 步（預設 Q4／INT8 官方模型）"
 MODE_BAKED_TURBO = "模型內建蒸餾・8 步（DaSiWa Turbo 等，不加 Turbo LoRA）"
+MODE_BAKED_TURBO_4 = "模型內建蒸餾・4 步（DaSiWa v4 Turbo 等，不加 Turbo LoRA）"
 MODE_FULL = "非蒸餾・20 步（CFG 2.5）"
-SAMPLING_MODES = [MODE_TURBO_LORA, MODE_BAKED_TURBO, MODE_FULL]
+SAMPLING_MODES = [MODE_TURBO_LORA, MODE_BAKED_TURBO, MODE_BAKED_TURBO_4, MODE_FULL]
 # A ~21 GB trunk leaves too little VRAM for the upscaler's Conv3d, which aborts the whole backend.
 HD_MAX_MODEL_BYTES = 15 * 1000 ** 3
 # Tested ceilings on this 24 GB card: 1920×1088 ran 12 s with the Q4 trunk, 1280×704 has more room.
@@ -97,7 +98,12 @@ HD_MAX_PIXEL_SECONDS = 1920 * 1088 * 12
 REF_MEASURED_PIXEL_FRAMES = 864 * 480 * (277 + 277)
 REF_MEASURED_MINUTES = 7.5
 REF_HEAVY_PIXEL_FRAMES = 150_000_000    # warn above this (about 3 min and up)
-MODE_SETTINGS = {MODE_TURBO_LORA: (True, 4, 1.0), MODE_BAKED_TURBO: (False, 8, 1.0), MODE_FULL: (False, 20, 2.5)}
+MODE_SETTINGS = {MODE_TURBO_LORA: (True, 4, 1.0), MODE_BAKED_TURBO: (False, 8, 1.0), MODE_BAKED_TURBO_4: (False, 4, 1.0),
+                 MODE_FULL: (False, 20, 2.5)}
+
+def baked_turbo_mode(model_name):
+    """Built-in distillation mode for a checkpoint: 4 steps when its file name says so (DaSiWa v4 Turbo, 4turbo), else 8."""
+    return MODE_BAKED_TURBO_4 if re.search(r"v4turbo|4turbo|4step", (model_name or "").lower()) else MODE_BAKED_TURBO
 
 def mode_settings(mode):
     """(apply Turbo LoRA, steps, cfg). Accepts the old boolean so saved calls keep working."""
@@ -128,6 +134,18 @@ HD_REFINE_SIGMAS = "0.9035, 0.6316, 0.3158, 0.0"
 HD_LABEL = "✨ 高清二次採樣（輸出上面選的解析度）"
 HD_INFO = "先用一半解析度生成，再以 H3 潛空間放大模型放大、補 3 步細節。會自動使用 Turbo。4 秒實測：1280×704 約 2 分 15 秒、1920×1088 約 5 分鐘。"
 HD_LOW_VRAM_INFO = "高清二次採樣需要 24GB 級顯卡，這台顯存不足已關閉；要更高解析度請生成後用「🔍 放大」（SeedVR2）。"
+# NVIDIA's Open-H3-Regenerate-2K (Songssx nodes): a fixed 1344×768 draft refined to 2560×1440 in 3 exact-sigma
+# steps on the Ref2VA INT8 trunk. 4090: 2 s in 7.5 min, 5 s in 26 min; ~15 min of that is loading and decoding.
+REGEN_DRAFT_SIZE = (1344, 768)
+REGEN_TARGET_SIZE = (2560, 1440)
+REGEN_MAX_SECONDS = 5
+REGEN_TRUNK = "minimax_h3_ref2va_pruned_int8_convrot.safetensors"
+REGEN_LORA = "open_h3/open_h3_regenerate_2k_lora.safetensors"
+REGEN_CURVES = "lora/sharp_curve_branches.safetensors"
+REGEN_EXTRAS_OPTION = 9
+REGEN_LABEL = "🌟 2K 精修（Open-H3-Regenerate，輸出 2560×1440）"
+REGEN_INFO = "NVIDIA 開源的 2K 精修：固定先以 1344×768（16:9 橫式）生成，再放大到 2560×1440 補 3 步細節。畫質最好但很慢，最長 5 秒；4090 實測 5 秒約 26 分鐘。勾選後會忽略上面的解析度與高清二次採樣。"
+REGEN_LOW_VRAM_INFO = "2K 精修需要 24GB 級顯卡，這台顯存不足已關閉。"
 FULL_HD_CHOICES = [
     "1920 × 1088 (16:9 Full HD · 需勾選高清二次採樣)",
     "1088 × 1920 (9:16 直式 Full HD · 需勾選高清二次採樣)",
@@ -406,8 +424,8 @@ def hd_base_size(width, height):
     """Half-size first pass, aligned to H3's 32-pixel canvas grid."""
     return max(32, round(width / 2 / 32) * 32), max(32, round(height / 2 / 32) * 32)
 
-def add_hd_refine(workflow, sampled_latent, model, conditioning, seed, width, height):
-    """Learned 3D latent upscale of the video stream, then a short re-noised pass at full size."""
+def add_latent_upscale(workflow, sampled_latent, width, height, on_cpu=False):
+    """Learned 3D latent upscale of the video stream; the audio stream passes through unchanged."""
     workflow["60"] = {"class_type": "LTXVSeparateAVLatent", "inputs": {"av_latent": sampled_latent}}
     workflow["61"] = {
         "class_type": "MinimaxH3LatentUpscaler3D",
@@ -420,11 +438,16 @@ def add_hd_refine(workflow, sampled_latent, model, conditioning, seed, width, he
             "align": 32,
             "enable_temporal_chunking": True,
             "force_unload": True,
-            "device": "cuda",
-            "precision": "fp16"
+            "device": "cpu" if on_cpu else "cuda",
+            "precision": "fp32" if on_cpu else "fp16"
         }
     }
     workflow["62"] = {"class_type": "LTXVConcatAVLatent", "inputs": {"video_latent": ["61", 0], "audio_latent": ["60", 1]}}
+    return ["62", 0]
+
+def add_hd_refine(workflow, sampled_latent, model, conditioning, seed, width, height):
+    """Learned 3D latent upscale, then a short re-noised pass at full size."""
+    add_latent_upscale(workflow, sampled_latent, width, height)
     workflow["64"] = {"class_type": "RandomNoise", "inputs": {"noise_seed": seed}}
     workflow["65"] = {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "euler"}}
     workflow["66"] = {"class_type": "ManualSigmas", "inputs": {"sigmas": HD_REFINE_SIGMAS}}
@@ -440,6 +463,38 @@ def add_hd_refine(workflow, sampled_latent, model, conditioning, seed, width, he
         }
     }
     return ["68", 0]
+
+def add_regenerate_refine(workflow, sampled_latent, cond_inputs, seed, trunk, lora, curves):
+    """Open-H3-Regenerate-2K, as in Songssx's Open_H3_Regenerate_2K_local.json: upscale the draft to 2560×1440,
+    then 3 exact-sigma steps on the Ref2VA INT8 trunk patched with the 2K LoRA and the Sharp curve branches."""
+    width, height = REGEN_TARGET_SIZE
+    # On the GPU the upscaler's Conv3d at 2560×1440 aborts the backend; on the CPU it takes about a minute.
+    add_latent_upscale(workflow, sampled_latent, width, height, on_cpu=True)
+    # Keyframe latents are encoded at canvas size, so the refine pass gets its own 2K conditioning.
+    workflow["63"] = {"class_type": "MiniMaxH3ImageToVideo", "inputs": {**cond_inputs, "width": width, "height": height}}
+    workflow["70"] = {"class_type": "UNETLoader", "inputs": {"unet_name": trunk, "weight_dtype": "default"}}
+    workflow["71"] = {"class_type": "OpenH3RegenerateModelPatch",
+                      "inputs": {"model": ["70", 0], "main_lora": lora, "curve_branches": curves, "strength": 1.0}}
+    workflow["72"] = {"class_type": "OpenH3LockAudioForRefine", "inputs": {"av_latent": ["62", 0]}}
+    workflow["73"] = {"class_type": "OpenH3RegenerateSigmas", "inputs": {"steps": "3"}}
+    workflow["64"] = {"class_type": "RandomNoise", "inputs": {"noise_seed": seed}}
+    workflow["65"] = {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "euler"}}
+    workflow["67"] = {"class_type": "BasicGuider", "inputs": {"model": ["71", 0], "conditioning": ["63", 0]}}
+    workflow["68"] = {"class_type": "SamplerCustomAdvanced",
+                      "inputs": {"noise": ["64", 0], "guider": ["67", 0], "sampler": ["65", 0],
+                                 "sigmas": ["73", 0], "latent_image": ["72", 0]}}
+    return ["68", 0]
+
+def resolve_regenerate_files():
+    """Backend spellings of the 2K refine's trunk, LoRA and curve branches; fails early with how to get them."""
+    try:
+        backend_choices("OpenH3RegenerateModelPatch", "main_lora")
+    except (requests.RequestException, KeyError):
+        raise gr.Error(L("後端尚未載入 Open-H3-Regenerate 節點。請重新執行 install.bat 安裝節點，再執行 restart_webui.bat。"))
+    resolve_backend_file("MinimaxH3LatentUpscaler3D", "model_name", H3_LATENT_UPSCALER, "潛空間放大模型", 5)
+    return {"trunk": resolve_backend_file("UNETLoader", "unet_name", REGEN_TRUNK, " Ref2VA INT8 主幹", REGEN_EXTRAS_OPTION),
+            "lora": resolve_backend_file("OpenH3RegenerateModelPatch", "main_lora", REGEN_LORA, "2K 精修 LoRA", REGEN_EXTRAS_OPTION),
+            "curves": resolve_backend_file("OpenH3RegenerateModelPatch", "curve_branches", REGEN_CURVES, "2K 精修曲線分支", REGEN_EXTRAS_OPTION)}
 
 def parse_resolution(resolution_str):
     res_parts = resolution_str.split("×")
@@ -472,8 +527,10 @@ def build_minimax_h3_prompt(
     lora_strength=1.0,
     hd_size=None,
     fl2va_model=H3_FL2VA_MODEL,
-    ref2va_model=None
+    ref2va_model=None,
+    regenerate=None
 ):
+    """regenerate: resolve_regenerate_files() to refine the (1344×768) draft to 2K with Open-H3-Regenerate."""
     if seed == -1 or seed is None:
         import random
         seed = random.randint(1, 1000000000000000)
@@ -585,7 +642,9 @@ def build_minimax_h3_prompt(
     }
 
     final_latent = ["20", 0]
-    if hd_size:
+    if regenerate:
+        final_latent = add_regenerate_refine(workflow, ["20", 0], cond_inputs, seed, **regenerate)
+    elif hd_size:
         hi_cond = ["7", 0]
         if first_frame_name or last_frame_name:
             # Keyframe latents are encoded at canvas size, so the refine pass needs its own conditioning.
@@ -625,7 +684,7 @@ def build_minimax_h3_prompt(
         "class_type": "SaveVideo",
         "inputs": {
             "video": ["40", 0],
-            "filename_prefix": "MiniMax_H3_HD_Output" if hd_size else "MiniMax_H3_Output",
+            "filename_prefix": "MiniMax_H3_2K_Output" if regenerate else ("MiniMax_H3_HD_Output" if hd_size else "MiniMax_H3_Output"),
             "format": "auto",
             "codec": "auto"
         }
@@ -717,6 +776,11 @@ def is_krea2_model(name):
     """Krea2 is an image model (different architecture); keep it out of the H3 video menus."""
     return "krea2" in (name or "").lower()
 
+def is_image_model(name):
+    """Krea2 and Qwen-Image checkpoints share diffusion_models with H3 but cannot run a video graph."""
+    low = (name or "").lower()
+    return is_krea2_model(low) or "qwen_image" in low or "qwen-image" in low
+
 
 def diffusion_model_choices(trunk=None):
     """H3 diffusion models for the FL2VA/Ref2VA menus. .gguf -> UnetLoaderGGUF, .safetensors ->
@@ -724,7 +788,7 @@ def diffusion_model_choices(trunk=None):
     dedicated models (models named for neither trunk, e.g. DaSiwa Hybrid, show in both)."""
     gguf = [f for f in list_model_files("diffusion_models", "UnetLoaderGGUF", "unet_name") if f.endswith(".gguf")]
     plain = [f for f in list_model_files("diffusion_models", "UNETLoader", "unet_name") if f.endswith(".safetensors")]
-    files = [f for f in sorted(set(gguf + plain)) if not is_krea2_model(f)]
+    files = [f for f in sorted(set(gguf + plain)) if not is_image_model(f)]
     if trunk == "fl2va":
         files = [f for f in files if "singularity" in f.lower() or ("ref2va" not in f.lower() and "ref2v" not in f.lower())]
     elif trunk == "ref2va":
@@ -739,7 +803,7 @@ def model_label_choices(models):
         if "10eros" in low:
             return "🔥【10Eros-Max 混合】內建 Turbo・8 步"
         if "dasiwa" in low or "hybrid" in low:
-            return "⚡【DaSiwa 混合】8步內建蒸餾"
+            return "⚡【DaSiwa 混合】4步內建蒸餾" if baked_turbo_mode(low) == MODE_BAKED_TURBO_4 else "⚡【DaSiwa 混合】8步內建蒸餾"
         if "q4_k_m" in low or "-q4" in low:
             return "🚀【官方 Q4 GGUF】最省顯存・極速推薦"
         if "int8_convrot" in low:
@@ -786,7 +850,7 @@ def check_generation_limits(model_name, lora_name, mode, hd, width, height, dura
                 L('{0}×{1} 的高清二次採樣最多約 {2:.0f} 秒，目前設定 {3} 秒會耗盡顯存。請縮短長度或降低解析度。', width, height, seconds, int(duration)))
     lowered = (model_name or "").lower()
     if mode == MODE_TURBO_LORA and "turbo" in lowered:
-        gr.Warning(L('「{0}」檔名顯示已內建蒸餾，建議採樣模式改選「{1}」；兩種蒸餾疊加會讓畫面變差。', model_name, MODE_BAKED_TURBO))
+        gr.Warning(L('「{0}」檔名顯示已內建蒸餾，建議採樣模式改選「{1}」；兩種蒸餾疊加會讓畫面變差。', model_name, L(baked_turbo_mode(model_name))))
     if lora_name and lora_name != NO_LORA:
         other = "ref2va" if trunk == "fl2va" else "fl2va"
         if other in lora_name.lower().replace("ref2v", "ref2va").replace("fl2v", "fl2va"):
@@ -1061,6 +1125,20 @@ def execute_seedvr2_upscale(video_file, resolution_label, batch_size, blocks_to_
 # Qwen-Image-2.1 Image Editing (修圖)
 # ---------------------------------------------------------------------------
 QWEN_IMAGE_DEFAULT_DIT = "qwen_image_2.1_int8_convrot.safetensors"
+# Distilled: 8 steps at CFG 1 (Comfy-Org README). Tested in 修圖/筆刷/擴圖 on the 4090: about 3x faster than the
+# base model at 25 steps with matching quality, and the outpaint Fun ControlNet works with it unchanged.
+QWEN_IMAGE_TURBO_DIT = "qwen_image_2.1_turbo_int8_convrot.safetensors"
+QWEN_TURBO_STEPS, QWEN_BASE_STEPS = 8, 25
+
+def is_qwen_turbo(model_name):
+    return "turbo" in (model_name or "").lower()
+
+def qwen_default_dit(choices):
+    """Turbo when it is downloaded, else the base int8 model."""
+    return QWEN_IMAGE_TURBO_DIT if QWEN_IMAGE_TURBO_DIT in choices else krea2_default(choices, QWEN_IMAGE_DEFAULT_DIT)
+
+def qwen_steps_for(model_name):
+    return QWEN_TURBO_STEPS if is_qwen_turbo(model_name) else QWEN_BASE_STEPS
 QWEN_IMAGE_DEFAULT_ENCODER = "qwen3vl_8b_int8_convrot.safetensors"
 QWEN_IMAGE_DEFAULT_VAE = "qwen_image_2.1_vae_bf16.safetensors"
 
@@ -1399,6 +1477,17 @@ def write_outpaint_prompt(image, shape, anchor, idea, progress=gr.Progress()):
     return generate_pro_prompt(pa.KIND_OUTPAINT, pa.outpaint_request(idea, outpaint.direction_text(plan)), "",
                                images=[image], progress=progress)
 
+def write_edit_prompt(primary, ref, extras, request, task, progress=gr.Progress()):
+    """✨ 修圖: Qwen3-VL looks at <image1> (and <image2>) and writes one Qwen-Image edit instruction."""
+    if not primary:
+        raise gr.Error(L("請先上傳要修改的主圖 (<image1>)！"))
+    if not (request or "").strip():
+        raise gr.Error(L("請先用一句話說要怎麼改（中文就可以），例如：把她的外套換成紅色。"))
+    pictures = 1 + bool(ref) + len(gallery_paths(extras))
+    text = generate_pro_prompt(pa.KIND_EDIT, pa.edit_request(request, task, pictures), "",
+                               images=[primary, ref], progress=progress)
+    return text, L("✅ 已填入修圖提示詞，可以直接修圖或再修改。")
+
 def gpu_status_text(note=""):
     try:
         queue = requests.get(f"{COMFY_URL}/queue", timeout=5).json()
@@ -1542,6 +1631,7 @@ def execute_generation(
     keyframe_instruction=True,
     fl2va_model=None,
     ref2va_model=None,
+    regenerate=False,
     progress=gr.Progress()
 ):
     if not prompt or not prompt.strip():
@@ -1550,6 +1640,11 @@ def execute_generation(
         raise gr.Error(L("請先上傳 3D 攝影機使用的參考圖片。"))
     if hd and camera_state is not None:
         raise gr.Error(L("3D 攝影機模式不支援高清二次採樣。"))
+    if regenerate and not HD_ALLOWED:
+        raise gr.Error(L(REGEN_LOW_VRAM_INFO))
+    if regenerate and duration > REGEN_MAX_SECONDS:
+        gr.Info(L("2K 精修最長 {0} 秒，已改為 {0} 秒。", REGEN_MAX_SECONDS))
+        duration = REGEN_MAX_SECONDS
 
     progress(0.05, desc=L("正在連線至 MiniMax H3 引擎..."))
     if not ensure_comfy_server():
@@ -1562,12 +1657,18 @@ def execute_generation(
             if node_type not in response.json():
                 raise gr.Error(L("後端尚未載入攝影機節點。請等目前生成完成，再執行 restart_webui.bat。"))
     model_options = resolve_model_options(text_encoder, lora_name, lora_strength, fl2va_model, ref2va_model)
+    regen_files = resolve_regenerate_files() if regenerate else None
+    if regenerate:
+        hd = False
     if hd:
         resolve_backend_file("MinimaxH3LatentUpscaler3D", "model_name", H3_LATENT_UPSCALER, "潛空間放大模型", 5)
         # The 3-step refine schedule only works with the distilled Turbo LoRA.
         turbo = MODE_TURBO_LORA
 
-    width, height = resolve_resolution(resolution_str, first_frame_file or last_frame_file)
+    if regenerate:
+        width, height = REGEN_DRAFT_SIZE
+    else:
+        width, height = resolve_resolution(resolution_str, first_frame_file or last_frame_file)
     check_generation_limits(model_options["fl2va_model"], model_options["lora_name"], turbo, hd, width, height, duration, "fl2va")
     if not hd and width * height > SINGLE_PASS_MAX_PIXELS:
         if camera_state is not None:
@@ -1602,6 +1703,7 @@ def execute_generation(
         first_frame_name=first_frame_name,
         last_frame_name=last_frame_name,
         hd_size=(width, height) if hd else None,
+        regenerate=regen_files,
         **model_options
     )
     if camera_state is not None:
@@ -1609,12 +1711,16 @@ def execute_generation(
             raise gr.Error(L("參考圖片上傳失敗，請重新上傳。"))
         prompt_graph = apply_camera_graph(prompt_graph, camera_state, prompt, width, height)
 
-    stage = "高清二次採樣（先半解析度 4 步，放大後再 3 步）" if hd else "採樣"
+    if regenerate:
+        stage = "2K 精修（先 1344×768 生成，放大到 2560×1440 後再 3 步；5 秒約 26 分鐘）"
+        width, height = REGEN_TARGET_SIZE
+    else:
+        stage = "高清二次採樣（先半解析度 4 步，放大後再 3 步）" if hd else "採樣"
     output_video_path = run_comfy_workflow(prompt_graph, prompt_graph["20"]["inputs"]["steps"], progress,
                                            "正在載入模型與運算中...", stage)
     history.record("3D 攝影機" if camera_state is not None else ("FL2VA" if (first_frame_name or last_frame_name) else "文生影音"),
                    prompt, output_video_path, resolution=f"{width}×{height}", seconds=round(duration, 2), seed=seed,
-                   mode=turbo if isinstance(turbo, str) else None, hd=bool(hd),
+                   mode=turbo if isinstance(turbo, str) else None, hd=bool(hd), regenerate_2k=bool(regenerate) or None,
                    model=model_options["fl2va_model"], encoder=model_options["text_encoder"],
                    lora=model_options["lora_name"], lora_strength=model_options["lora_strength"] if model_options["lora_name"] else None)
     progress(1.0, desc=L("影音生成完成！"))
@@ -2206,7 +2312,8 @@ PROMPT_LLM_MODELS = [("qwen3vl_8b_int8_convrot.safetensors", "qwen_image"),   # 
                      ("qwen3vl_4b_fp8_scaled.safetensors", "krea2")]          # 🎨 圖片 encoder
 PROMPT_LLM_EXTRAS_OPTION = 7
 PROMPT_LLM_IMAGE_MP = 0.4   # keeps a phone photo from turning into ~10k vision tokens
-PROMPT_LLM_MAX_TOKENS = {pa.KIND_T2VA: 1200, pa.KIND_KEYFRAME: 1200, pa.KIND_IMAGE: 400, pa.KIND_OUTPAINT: 400}
+PROMPT_LLM_MAX_TOKENS = {pa.KIND_T2VA: 1200, pa.KIND_KEYFRAME: 1200, pa.KIND_IMAGE: 400, pa.KIND_OUTPAINT: 400,
+                         pa.KIND_EDIT: 400}
 
 def prompt_llm_model():
     available = {os.path.basename(f): f for f in list_model_files("text_encoders", "CLIPLoader", "clip_name")}
@@ -2583,6 +2690,7 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                         t2v_seed = gr.Number(label=T("隨機種子 (-1 為隨機)"), value=-1, precision=0)
                     wire_prompt_assistant(t2v_assist, [t2v_prompt], seconds=t2v_duration)
                     t2v_hd = gr.Checkbox(label=T(HD_LABEL), info=T(HD_INFO) if HD_ALLOWED else T(HD_LOW_VRAM_INFO), value=False, interactive=HD_ALLOWED)
+                    t2v_regen = gr.Checkbox(label=T(REGEN_LABEL), info=T(REGEN_INFO) if HD_ALLOWED else T(REGEN_LOW_VRAM_INFO), value=False, interactive=HD_ALLOWED)
 
                     t2v_btn = gr.Button(T("🎬 開始生成影音 (Generate Video & Audio)"), variant="primary", size="lg")
 
@@ -2590,8 +2698,8 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                     t2v_output = gr.Video(label=T("生成影音預覽 (帶原生立體聲音效)"), interactive=False, height=520)
 
             t2v_btn.click(
-                fn=lambda p, r, d, tb, s, hd, *m: execute_generation(p, r, d, tb, s, hd=hd, **video_model_options("fl2va", *m)),
-                inputs=[t2v_prompt, t2v_res, t2v_duration, t2v_turbo, t2v_seed, t2v_hd, *model_inputs],
+                fn=lambda p, r, d, tb, s, hd, rg, *m: execute_generation(p, r, d, tb, s, hd=hd, regenerate=rg, **video_model_options("fl2va", *m)),
+                inputs=[t2v_prompt, t2v_res, t2v_duration, t2v_turbo, t2v_seed, t2v_hd, t2v_regen, *model_inputs],
                 outputs=[t2v_output]
             )
 
@@ -2621,6 +2729,7 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                         i2v_seed = gr.Number(label=T("隨機種子 (-1 為隨機)"), value=-1, precision=0)
                     wire_prompt_assistant(i2v_assist, [i2v_prompt], seconds=i2v_duration, frames=(i2v_first, i2v_last))
                     i2v_hd = gr.Checkbox(label=T(HD_LABEL), info=T(HD_INFO) if HD_ALLOWED else T(HD_LOW_VRAM_INFO), value=False, interactive=HD_ALLOWED)
+                    i2v_regen = gr.Checkbox(label=T(REGEN_LABEL), info=T(REGEN_INFO) if HD_ALLOWED else T(REGEN_LOW_VRAM_INFO), value=False, interactive=HD_ALLOWED)
 
                     i2v_btn = gr.Button(T("🎬 生成首尾幀影音"), variant="primary", size="lg")
 
@@ -2628,8 +2737,8 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                     i2v_output = gr.Video(label=T("生成影音預覽"), interactive=False, height=520)
 
             i2v_btn.click(
-                fn=lambda p, r, d, tb, s, f, l, hd, ki, *m: execute_generation(p, r, d, tb, s, f, l, hd=hd, keyframe_instruction=ki, **video_model_options("fl2va", *m)),
-                inputs=[i2v_prompt, i2v_res, i2v_duration, i2v_turbo, i2v_seed, i2v_first, i2v_last, i2v_hd, i2v_instruction, *model_inputs],
+                fn=lambda p, r, d, tb, s, f, l, hd, rg, ki, *m: execute_generation(p, r, d, tb, s, f, l, hd=hd, regenerate=rg, keyframe_instruction=ki, **video_model_options("fl2va", *m)),
+                inputs=[i2v_prompt, i2v_res, i2v_duration, i2v_turbo, i2v_seed, i2v_first, i2v_last, i2v_hd, i2v_regen, i2v_instruction, *model_inputs],
                 outputs=[i2v_output]
             )
 
@@ -2784,11 +2893,11 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
             def on_v2v_model_change(selected_model):
                 low = (selected_model or "").lower()
                 baked = "turbo" in low and "singularity" not in low
-                mode = MODE_BAKED_TURBO if baked else MODE_TURBO_LORA
+                mode = baked_turbo_mode(low) if baked else MODE_TURBO_LORA
                 if "singularity" in low:
                     gr.Info(L("已選取 Singularity 奇點微調模型：自動配置 4 步 Turbo 模式，具備 HDR 畫質與動作增強能力。"))
                 elif baked:
-                    gr.Info(L("已選取內建蒸餾模型：自動配置 8 步採樣（不外掛 Turbo LoRA）。"))
+                    gr.Info(L("已選取內建蒸餾模型：自動配置 {0} 步採樣（不外掛 Turbo LoRA）。", mode_settings(mode)[1]))
                 else:
                     gr.Info(L("已選取標準模型：自動配置 4 步 Turbo LoRA 採樣。"))
                 return gr.Dropdown(value=mode), selected_model
@@ -3015,6 +3124,15 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                     with gr.Accordion(T("➕ 更多參考圖 (<image3>, <image4>... 如多配件或多人物)"), open=False):
                         qwen_extra_images = picture_gallery(T("更多參考圖（依序為 <image3>、<image4>…）"))
 
+                    with gr.Accordion(T("✨ AI 修圖指令：用一句話說要怎麼改，AI 看圖寫成 Qwen-Image 指令（本機免費）"), open=True):
+                        qwen_ai_request = gr.Textbox(label=T("要怎麼改（一句話就可以，中文也行）"), lines=2,
+                                                     placeholder=T("例如：把她的外套換成紅色／讓她坐在窗邊的木椅上看書／把招牌文字改成「早安咖啡」"))
+                        with gr.Row():
+                            qwen_ai_task = gr.Dropdown(label=T("修圖類型"), choices=choices(list(pa.EDIT_TASKS)),
+                                                       value=next(iter(pa.EDIT_TASKS)), scale=3)
+                            qwen_ai_btn = gr.Button(T("✨ 寫成修圖指令"), variant="secondary", scale=1, min_width=160)
+                        qwen_ai_status = gr.Markdown(T("AI 會看主圖（和 <image2>），先寫要改什麼，再用一句話鎖住不改的部分；約 5～20 秒。"))
+
                     with gr.Row():
                         qwen_preset = gr.Dropdown(
                             label=T("💡 常用修圖指令範本（點選即可填入）"),
@@ -3042,13 +3160,15 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                             value=QWEN_IMAGE_RESOLUTIONS[0],
                             info=T("預設把長邊縮到 1024（約 20 秒一張）；2048 與「0 原圖像素」對大圖會慢很多")
                         )
-                        qwen_steps = gr.Slider(label=T("採樣步數 (推薦 25 步)"), minimum=10, maximum=50, value=25, step=1)
+                        qwen_steps = gr.Slider(label=T("採樣步數（Turbo 8 步／一般 25 步）"), minimum=4, maximum=50,
+                                               value=qwen_steps_for(qwen_default_dit(qwen_dits)), step=1)
                         qwen_cfg = gr.Number(label=T("CFG (官方推薦 1.0)"), value=1.0)
                         qwen_seed = gr.Number(label=T("隨機種子 (-1 為隨機)"), value=-1, precision=0)
 
                     with gr.Accordion(T("⚙️ 模型與 KV 快取設定"), open=False):
                         with gr.Row():
-                            qwen_model = gr.Dropdown(label=T("🎯 Qwen-Image 擴散模型"), choices=qwen_dits, value=krea2_default(qwen_dits, QWEN_IMAGE_DEFAULT_DIT), scale=3)
+                            qwen_model = gr.Dropdown(label=T("🎯 Qwen-Image 擴散模型"), choices=qwen_dits, value=qwen_default_dit(qwen_dits), scale=3,
+                                                     info=T("檔名有 turbo 的是加速版：8 步、CFG 1，約快 3 倍；選模型時步數會自動切換。"))
                             qwen_encoder = gr.Dropdown(label=T("文字編碼器 (Qwen3-VL 8B)"), choices=qwen_encoders, value=krea2_default(qwen_encoders, QWEN_IMAGE_DEFAULT_ENCODER), scale=3)
                             qwen_vae = gr.Dropdown(label="Qwen VAE", choices=qwen_vaes, value=krea2_default(qwen_vaes, QWEN_IMAGE_DEFAULT_VAE), scale=2)
                         with gr.Row():
@@ -3071,13 +3191,16 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
             def on_qwen_preset_change(p_name):
                 return QWEN_IMAGE_PRESETS.get(p_name, "")
 
+            qwen_ai_btn.click(write_edit_prompt,
+                              [qwen_primary_image, qwen_ref_image, qwen_extra_images, qwen_ai_request, qwen_ai_task],
+                              [qwen_prompt, qwen_ai_status])
             qwen_preset_btn.click(on_qwen_preset_change, [qwen_preset], [qwen_prompt], queue=False)
             qwen_preset.change(on_qwen_preset_change, [qwen_preset], [qwen_prompt], queue=False)
 
             def refresh_qwen_choices():
                 dits, encoders, vaes = qwen_image_model_choices()
                 return (
-                    gr.Dropdown(choices=dits, value=krea2_default(dits, QWEN_IMAGE_DEFAULT_DIT)),
+                    gr.Dropdown(choices=dits, value=qwen_default_dit(dits)),
                     gr.Dropdown(choices=encoders, value=krea2_default(encoders, QWEN_IMAGE_DEFAULT_ENCODER)),
                     gr.Dropdown(choices=vaes, value=krea2_default(vaes, QWEN_IMAGE_DEFAULT_VAE)),
                 )
@@ -3128,7 +3251,7 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                         brush_example = gr.Dropdown(label=T("常用範例（點選填入）"), choices=choices(BRUSH_EXAMPLES), value=None, scale=2)
                     with gr.Row():
                         brush_res = gr.Dropdown(label=T("輸出解析度"), choices=choices(QWEN_IMAGE_RESOLUTIONS), value=QWEN_IMAGE_RESOLUTIONS[0])
-                        brush_steps = gr.Slider(label=T("採樣步數"), minimum=10, maximum=50, value=25, step=1)
+                        brush_steps = gr.Slider(label=T("採樣步數"), minimum=4, maximum=50, value=qwen_steps.value, step=1)
                         brush_seed = gr.Number(label=T("隨機種子 (-1 為隨機)"), value=-1, precision=0)
                     brush_btn = gr.Button(T("🖍️ 依筆畫生成新圖"), variant="primary", size="lg")
                 with gr.Column(scale=5):
@@ -3173,7 +3296,7 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                     with gr.Row():
                         out_size = gr.Dropdown(label=T("輸出大小"), choices=choices(list(outpaint.SIZES)),
                                                value=list(outpaint.SIZES)[1 if HD_ALLOWED else 0])
-                        out_steps = gr.Slider(label=T("採樣步數"), minimum=10, maximum=50, value=25, step=1)
+                        out_steps = gr.Slider(label=T("採樣步數"), minimum=4, maximum=50, value=qwen_steps.value, step=1)
                         out_strength = gr.Slider(label=T("ControlNet 強度"), minimum=0.5, maximum=1.5, value=1.0, step=0.05)
                         out_seed = gr.Number(label=T("隨機種子 (-1 為隨機)"), value=-1, precision=0)
                     out_btn = gr.Button(T("↔️ 開始擴圖"), variant="primary", size="lg")
@@ -3183,6 +3306,12 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                         out_again = gr.Button(T("🔄 用結果再擴一次"), variant="secondary")
                         out_to_i2v = gr.Button(T("📋 套用到 🖼️ 首尾幀 (首幀)"), variant="secondary")
                         out_to_ref = gr.Button(T("📋 套用到 🎞️ 參考"), variant="secondary")
+            def qwen_model_changed(model):
+                steps = qwen_steps_for(model)
+                gr.Info(L("已選 Turbo 加速版：步數設為 8、CFG 1。") if is_qwen_turbo(model) else L("已選一般版：步數設為 25。"))
+                return steps, 1.0, steps, steps
+            # The model menu lives in 🖌️ 修圖 and is shared by 🖍️ 筆刷修圖 and ↔️ 擴圖, so all three step sliders follow it.
+            qwen_model.input(qwen_model_changed, [qwen_model], [qwen_steps, qwen_cfg, brush_steps, out_steps], queue=False)
             out_write.click(write_outpaint_prompt, [out_image, out_shape, out_anchor, out_idea], [out_prompt])
             out_btn.click(execute_outpaint,
                           [out_image, out_shape, out_anchor, out_size, out_prompt, out_steps, out_strength, out_seed,
@@ -3446,7 +3575,7 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
                 "4. 🔍 放大分頁：SeedVR2（約 7 GB）　5. 高清二次採樣放大模型（僅 24GB）　6. Heretic 文字編碼器\n"
                 "7. ✨ AI 專業提示詞模型（Qwen3-VL 4B，約 5 GB；已下載 1 或 3 就不用再下載）\n\n"
                 "### 🖥️ 架構\n"
-                "- 後端：ComfyUI v0.38.0（本機 http://127.0.0.1:8188 可開原生節點畫布）\n"
+                "- 後端：ComfyUI v0.41.0（本機 http://127.0.0.1:8188 可開原生節點畫布）\n"
                 "- 影音模型：MiniMax H3 FL2VA／Ref2VA Q4_K_M GGUF（預設）、Qwen3-VL 32B NVFP4 文字編碼器、H3 影音 VAE（有 INT8 版時自動使用）\n"
                 "- 加速：`minimax_h3_fl2v_turbo_8step_v1.0`、`minimax_h3_ref2v_turbo_4step_v0.1` Turbo LoRA")
             )
@@ -3488,18 +3617,18 @@ with gr.Blocks(title=PANEL_TITLE) as demo:
         def keep(current, extra=()):
             allowed = [*extra, *res_choices]
             return gr.Dropdown(choices=choices(allowed), value=current if current in allowed else DEFAULT_RES)
-        target_mode = MODE_BAKED_TURBO if baked else MODE_TURBO_LORA
+        target_mode = baked_turbo_mode(model) if baked else MODE_TURBO_LORA
         return (hd_update, hd_update, keep(resolution_a), keep(resolution_b, tuple(AUTO_RESOLUTION_CHOICES)),
                 gr.Dropdown(value=target_mode), gr.Dropdown(value=target_mode), gr.Dropdown(value=target_mode), gr.Dropdown(value=target_mode))
 
     def ref2va_model_changed(model, *current_modes):
         low = (model or "").lower()
         baked = "turbo" in low and "singularity" not in low
-        target_mode = MODE_BAKED_TURBO if baked else MODE_TURBO_LORA
+        target_mode = baked_turbo_mode(low) if baked else MODE_TURBO_LORA
         if "singularity" in low:
             gr.Info(L("已選取 Singularity 奇點微調模型：自動配置 4 步 Turbo 採樣，具備 HDR 畫質與動作增強能力。"))
         elif baked:
-            gr.Info(L("已選取內建蒸餾模型：自動配置 8 步採樣（不外掛 Turbo LoRA）。"))
+            gr.Info(L("已選取內建蒸餾模型：自動配置 {0} 步採樣（不外掛 Turbo LoRA）。", mode_settings(target_mode)[1]))
         updates = [gr.Dropdown(value=target_mode) for _ in current_modes]
         return (*updates, gr.Dropdown(value=model))
 

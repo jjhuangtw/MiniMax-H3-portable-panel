@@ -60,7 +60,7 @@ Krea2 image style LoRAs:
 ## Install — one click
 
 **Easiest:** download **[`setup.bat`](../../raw/main/setup.bat)** (right-click ▸ Save link as…), put it in an
-**empty folder** on a drive with ~200 GB free, and **double-click it**. It downloads ComfyUI portable (pinned v0.38.0),
+**empty folder** on a drive with ~200 GB free, and **double-click it**. It downloads ComfyUI portable (pinned v0.41.0),
 the panel and the core H3 models, then launches the panel — no git, no 7-Zip needed. It's resumable: if a download
 drops, run it again. Windows SmartScreen may warn about an unrecognized app — click **More info ▸ Run anyway** (it's
 an unsigned `.bat` that only downloads the files below).
@@ -71,7 +71,7 @@ Prefer to do it by hand, or already have ComfyUI portable? Use the three manual 
 
 **1. Get ComfyUI portable.** Download `ComfyUI_windows_portable_nvidia.7z` from the
    [ComfyUI releases](https://github.com/comfyanonymous/ComfyUI/releases) (use the **latest**; the panel is tested on
-   v0.38.0) and extract it with [7-Zip](https://www.7-zip.org/). You get a folder containing `python_embeded\` and
+   v0.41.0) and extract it with [7-Zip](https://www.7-zip.org/). You get a folder containing `python_embeded\` and
    `ComfyUI\`.
 
 **2. Add the panel.** On this GitHub page click **Code ▸ Download ZIP**, extract it, and copy everything inside into
@@ -82,10 +82,11 @@ Prefer to do it by hand, or already have ComfyUI portable? Use the three manual 
    http://127.0.0.1:7860 . `install.bat` is resumable — if a download drops, run it again.
 
 **Optional models**: double-click **`download_extras.bat`** and type a number:
-1 Krea2 image model for the 🎨 Image tab (~19 GB) · 2 Krea2 style LoRAs · 3 Qwen-Image-2.1 for the 🖌️ Image Edit tab
+1 Krea2 image model for the 🎨 Image tab (~19 GB) · 2 Krea2 style LoRAs · 3 Qwen-Image-2.1 Turbo (8 steps) for the 🖌️ Image Edit, 🖍️ Brush Edit and ↔️ Outpaint tabs
 (~17 GB) · 4 SeedVR2 for the 🔍 Upscale tab (~7 GB) · 5 HD two-pass upscaler (24 GB cards) · 6 Heretic text encoder ·
 7 the ✨ AI prompt writer (~5 GB; already included in 1 or 3) ·
-8 the Fun ControlNet for the ↔️ Outpaint tab (~3.8 GB; needs 3).
+8 the Fun ControlNet for the ↔️ Outpaint tab (~3.8 GB; needs 3) ·
+9 the 🌟 2K refine, Open-H3-Regenerate (24 GB cards, ~35 GB; needs 5).
 A tab whose model is missing tells you which number to pick.
 
 **🔞 NSFW community models (18+, download them yourself)**: the installers never fetch them. Where to download
@@ -131,6 +132,7 @@ their pages, star their repos and follow their licenses.
 | Qwen3-VL-32B NVFP4 text encoder / INT8 video VAE | text encoding, lower-VRAM decode | Qwen team (Alibaba) · Comfy-Org — [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3) |
 | Qwen3-VL-32B Heretic (uncensored) encoder | optional | sakamakismile — [Qwen3-VL-32B-Heretic-MiniMax-H3-NVFP4](https://huggingface.co/sakamakismile/Qwen3-VL-32B-Heretic-MiniMax-H3-NVFP4) |
 | H3 latent upscaler 3D | HD two-pass | LBH-123-AI — [Minimax_h3_latent_Upscaler](https://huggingface.co/LBH-123-AI/Minimax_h3_latent_Upscaler) |
+| Open-H3-Regenerate-2K (LoRA + Sharp curve branches) | 🌟 2K refine | NVIDIA — [Efficient-Large-Model/Open-H3-Regenerate-2K](https://huggingface.co/Efficient-Large-Model/Open-H3-Regenerate-2K) |
 | SeedVR2 3B + EMA VAE | 🔍 video upscale | ByteDance Seed — [ByteDance-Seed/SeedVR](https://github.com/ByteDance-Seed/SeedVR) · ComfyUI weights by numz [numz/SeedVR2_comfyUI](https://huggingface.co/numz/SeedVR2_comfyUI) |
 | Krea 2 Turbo + style LoRAs | 🎨 Image tab, template thumbnails | Krea — ComfyUI packaging by Comfy-Org [Comfy-Org/Krea-2](https://huggingface.co/Comfy-Org/Krea-2) |
 | Qwen-Image-2.1 + Qwen3-VL 8B | 🖌️ image editing | Qwen team — [Qwen/Qwen-Image-2.1](https://huggingface.co/Qwen/Qwen-Image-2.1) · [Comfy-Org/Qwen-Image-2.1](https://huggingface.co/Comfy-Org/Qwen-Image-2.1) · optional GGUF by [AlperKTS](https://huggingface.co/AlperKTS/Qwen-Image-2.1-GGUF) and [abenzerps](https://huggingface.co/abenzerps/Qwen-Image-2.1-GGUF) |
@@ -145,10 +147,12 @@ their pages, star their repos and follow their licenses.
 | ComfyUI-GGUF-Loader | loads the Q4 GGUF models | ChrisColeTech — [ChrisColeTech/ComfyUI-GGUF-Loader](https://github.com/ChrisColeTech/ComfyUI-GGUF-Loader) |
 | ComfyUI-MiniMaxH3-TimelineDirector | audio lock for lip-sync | Songssx — [Songssx/ComfyUI-MiniMaxH3-TimelineDirector](https://github.com/Songssx/ComfyUI-MiniMaxH3-TimelineDirector) |
 | Comfyui_Minimax_h3_latent_Upscaler | HD two-pass node | LBH-123-AI — [LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler](https://github.com/LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler) |
+| ComfyUI-OpenH3-Regenerate2K | 🌟 2K refine nodes | Songssx — [Songssx/ComfyUI-OpenH3-Regenerate2K](https://github.com/Songssx/ComfyUI-OpenH3-Regenerate2K) (MIT) |
 | 3D Camera Control for H3 | 🎥 Camera tab | NyckM — [NyckM/3d-Camera-control-H3-Minimax](https://github.com/NyckM/3d-Camera-control-H3-Minimax) |
 | ComfyUI-MiniMax-H3-Edit | camera prompt encoding | ethanfel — [ethanfel/ComfyUI-MiniMax-H3-Edit](https://github.com/ethanfel/ComfyUI-MiniMax-H3-Edit) |
 | ComfyUI-SeedVR2_VideoUpscaler | 🔍 upscale node | numz — [numz/ComfyUI-SeedVR2_VideoUpscaler](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler) |
 | h3-prompt-writing skill | official prompt format, guides in the library | MiniMax — [MiniMax-AI/MiniMax-H3](https://github.com/MiniMax-AI/MiniMax-H3) |
+| qwen-image-gen skill | rewriting rules for the ✨ AI edit instruction in 🖌️ Image Edit | Fini.Yang — [ZSeven-W/craft-skills](https://github.com/ZSeven-W/craft-skills/tree/main/skills/qwen-image-gen) (MIT) |
 | Gradio | the web interface | Hugging Face — [gradio-app/gradio](https://github.com/gradio-app/gradio) |
 | FFmpeg (via imageio-ffmpeg) | video cutting and joining | [FFmpeg](https://ffmpeg.org/) · [imageio/imageio-ffmpeg](https://github.com/imageio/imageio-ffmpeg) |
 | 7-Zip (7zr.exe) | `setup.bat` unpacks ComfyUI portable | Igor Pavlov — [7-zip.org](https://www.7-zip.org/) |

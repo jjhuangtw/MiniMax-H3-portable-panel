@@ -57,7 +57,7 @@ Krea2 画像スタイル LoRA：
 ## インストール：ワンクリック
 
 **いちばん簡単**：**[`setup.bat`](../../raw/main/setup.bat)** をダウンロードし（右クリック ▸ 名前を付けてリンク先を保存）、空き容量が
-約 200 GB あるドライブの**空のフォルダー**に置いて**ダブルクリック**します。ComfyUI portable（v0.38.0 固定）、パネル、H3 のコアモデルを
+約 200 GB あるドライブの**空のフォルダー**に置いて**ダブルクリック**します。ComfyUI portable（v0.41.0 固定）、パネル、H3 のコアモデルを
 ダウンロードし、最後にパネルを起動します。git も 7-Zip も不要です。途中で止まっても、もう一度実行すれば続きから再開します。
 Windows SmartScreen が「認識されないアプリ」と警告した場合は **「詳細情報 ▸ 実行」** をクリックしてください
 （署名のない `.bat` で、下記のファイルをダウンロードするだけです）。
@@ -67,7 +67,7 @@ Windows SmartScreen が「認識されないアプリ」と警告した場合は
 ## インストール：手動 3 ステップ
 
 **1. ComfyUI portable を入手。** [ComfyUI releases](https://github.com/comfyanonymous/ComfyUI/releases) から
-   `ComfyUI_windows_portable_nvidia.7z` をダウンロードし（**最新版**で OK。パネルは v0.38.0 で検証）、[7-Zip](https://www.7-zip.org/)
+   `ComfyUI_windows_portable_nvidia.7z` をダウンロードし（**最新版**で OK。パネルは v0.41.0 で検証）、[7-Zip](https://www.7-zip.org/)
    で展開します。`python_embeded\` と `ComfyUI\` を含むフォルダーができます。
 
 **2. パネルを追加。** このページで **Code ▸ Download ZIP** をクリックして展開し、中の**すべてのファイル**をステップ 1 のフォルダーに
@@ -78,10 +78,11 @@ Windows SmartScreen が「認識されないアプリ」と警告した場合は
    `install.bat` は途中から再開できます。止まったらもう一度実行してください。
 
 **追加モデル**：**`download_extras.bat`** をダブルクリックし、番号を入力します：
-1 Krea2 画像モデル（🎨 Image タブ、約 19 GB）· 2 Krea2 スタイル LoRA · 3 Qwen-Image-2.1（🖌️ Image Edit タブ、約 17 GB）·
+1 Krea2 画像モデル（🎨 Image タブ、約 19 GB）· 2 Krea2 スタイル LoRA · 3 Qwen-Image-2.1 Turbo（🖌️ Image Edit／🖍️ Brush Edit／↔️ Outpaint、8 ステップ、約 17 GB）·
 4 SeedVR2（🔍 Upscale タブ、約 7 GB）· 5 HD 2 パス用アップスケーラー（24 GB GPU）· 6 Heretic テキストエンコーダー ·
 7 ✨ AI プロンプトライター（約 5 GB。1 または 3 を選ぶと含まれます）·
-8 ↔️ Outpaint タブ用の Fun ControlNet（約 3.8 GB。先に 3 が必要）。
+8 ↔️ Outpaint タブ用の Fun ControlNet（約 3.8 GB。先に 3 が必要）·
+9 🌟 2K リファイン Open-H3-Regenerate（24 GB GPU、約 35 GB。先に 5 が必要）。
 モデルが足りないタブには、どの番号を選べばよいかが表示されます。
 
 **🔞 成人向けコミュニティモデル（18 歳以上、各自でダウンロード）**：インストーラーはダウンロードしません。10Eros-Max と DaSiWa の
@@ -127,6 +128,7 @@ VRAM の検出が正しくない場合は、コマンドプロンプトで `set 
 | Qwen3-VL-32B NVFP4 テキストエンコーダー / INT8 動画 VAE | テキストエンコード、省 VRAM デコード | Qwen チーム（Alibaba）· Comfy-Org — [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3) |
 | Qwen3-VL-32B Heretic（無検閲）エンコーダー | 任意 | sakamakismile — [Qwen3-VL-32B-Heretic-MiniMax-H3-NVFP4](https://huggingface.co/sakamakismile/Qwen3-VL-32B-Heretic-MiniMax-H3-NVFP4) |
 | H3 latent upscaler 3D | HD 2 パス | LBH-123-AI — [Minimax_h3_latent_Upscaler](https://huggingface.co/LBH-123-AI/Minimax_h3_latent_Upscaler) |
+| Open-H3-Regenerate-2K（LoRA＋Sharp カーブ分岐） | 🌟 2K リファイン | NVIDIA — [Efficient-Large-Model/Open-H3-Regenerate-2K](https://huggingface.co/Efficient-Large-Model/Open-H3-Regenerate-2K) |
 | SeedVR2 3B + EMA VAE | 🔍 動画アップスケール | ByteDance Seed — [ByteDance-Seed/SeedVR](https://github.com/ByteDance-Seed/SeedVR) · ComfyUI 用重み：numz [numz/SeedVR2_comfyUI](https://huggingface.co/numz/SeedVR2_comfyUI) |
 | Krea 2 Turbo + スタイル LoRA | 🎨 Image タブ、テンプレートのサムネイル | Krea — ComfyUI 版：Comfy-Org [Comfy-Org/Krea-2](https://huggingface.co/Comfy-Org/Krea-2) |
 | Qwen-Image-2.1 + Qwen3-VL 8B | 🖌️ 画像編集 | Qwen チーム — [Qwen/Qwen-Image-2.1](https://huggingface.co/Qwen/Qwen-Image-2.1) · [Comfy-Org/Qwen-Image-2.1](https://huggingface.co/Comfy-Org/Qwen-Image-2.1) · 任意の GGUF：[AlperKTS](https://huggingface.co/AlperKTS/Qwen-Image-2.1-GGUF)、[abenzerps](https://huggingface.co/abenzerps/Qwen-Image-2.1-GGUF) |
@@ -141,10 +143,12 @@ VRAM の検出が正しくない場合は、コマンドプロンプトで `set 
 | ComfyUI-GGUF-Loader | Q4 GGUF モデルの読み込み | ChrisColeTech — [ChrisColeTech/ComfyUI-GGUF-Loader](https://github.com/ChrisColeTech/ComfyUI-GGUF-Loader) |
 | ComfyUI-MiniMaxH3-TimelineDirector | リップシンク用の音声ロック | Songssx — [Songssx/ComfyUI-MiniMaxH3-TimelineDirector](https://github.com/Songssx/ComfyUI-MiniMaxH3-TimelineDirector) |
 | Comfyui_Minimax_h3_latent_Upscaler | HD 2 パス用ノード | LBH-123-AI — [LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler](https://github.com/LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler) |
+| ComfyUI-OpenH3-Regenerate2K | 🌟 2K リファイン用ノード | Songssx — [Songssx/ComfyUI-OpenH3-Regenerate2K](https://github.com/Songssx/ComfyUI-OpenH3-Regenerate2K)（MIT） |
 | 3D Camera Control for H3 | 🎥 Camera タブ | NyckM — [NyckM/3d-Camera-control-H3-Minimax](https://github.com/NyckM/3d-Camera-control-H3-Minimax) |
 | ComfyUI-MiniMax-H3-Edit | カメラ用プロンプトのエンコード | ethanfel — [ethanfel/ComfyUI-MiniMax-H3-Edit](https://github.com/ethanfel/ComfyUI-MiniMax-H3-Edit) |
 | ComfyUI-SeedVR2_VideoUpscaler | 🔍 アップスケール用ノード | numz — [numz/ComfyUI-SeedVR2_VideoUpscaler](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler) |
 | h3-prompt-writing skill | 公式プロンプト形式、ライブラリ内のガイド | MiniMax — [MiniMax-AI/MiniMax-H3](https://github.com/MiniMax-AI/MiniMax-H3) |
+| qwen-image-gen skill | 🖌️ Image Edit の ✨ AI 編集指示の書き換えルール | Fini.Yang — [ZSeven-W/craft-skills](https://github.com/ZSeven-W/craft-skills/tree/main/skills/qwen-image-gen)（MIT） |
 | Gradio | Web インターフェース | Hugging Face — [gradio-app/gradio](https://github.com/gradio-app/gradio) |
 | FFmpeg（imageio-ffmpeg 経由） | 動画のカット・結合 | [FFmpeg](https://ffmpeg.org/) · [imageio/imageio-ffmpeg](https://github.com/imageio/imageio-ffmpeg) |
 | 7-Zip（7zr.exe） | `setup.bat` での ComfyUI portable の展開 | Igor Pavlov — [7-zip.org](https://www.7-zip.org/) |

@@ -13,6 +13,17 @@ KIND_KEYFRAME = "i2va"    # 🖼️ 首尾幀: body that starts from <Picture 1>
 KIND_STORY = "story"      # 📝 編劇: 共同設定 + 畫面｜運鏡｜聲音 lines, in Traditional Chinese
 KIND_IMAGE = "image"      # 🎨 圖片: one English paragraph for Krea2
 KIND_OUTPAINT = "outpaint"  # ↔️ 擴圖: one English paragraph describing the whole extended picture
+KIND_EDIT = "edit"        # 🖌️ 修圖: one Qwen-Image-2.1 edit instruction using <image1>, <image2> ...
+
+# 🖌️ 修圖 task types -> what the writer is told. The rules follow the qwen-image-gen skill from
+# ZSeven-W/craft-skills (MIT): name the change first, one keep clause, no re-describing unchanged areas.
+EDIT_TASKS = {
+    "自動判斷": "",
+    "✏️ 修改這張圖（局部改動，其餘不變）": "Edit <image1>: a local change, everything else stays.",
+    "🧍 用參考人物／主體創作新畫面（新姿勢、新場景）": "Create a new picture of the subject from the pictures: new pose and scene.",
+    "👕 把參考圖的服裝／配件／風格套到主圖": "Transfer the outfit, accessory or style from the reference pictures onto <image1>.",
+    "🔤 修改或加入畫面文字": "Change or add text in <image1>.",
+}
 
 STYLE_CHOICES = {
     "自動（依想法判斷）": "",
@@ -100,8 +111,27 @@ Layout:
 - Shots follow each other in time and keep the same people and place. Dialogue, if the user wants it, goes in 畫面內容 as: 她 (S1) 說：<d>[Chinese] 台詞</d>
 - {_SAFETY_RULE}""",
     KIND_IMAGE: """You write prompts for the Krea2 image model. Turn the user's idea (often short, often in Chinese) into ONE English paragraph of 60 to 120 words describing a single still image: subject, age, hair and clothing for people, pose, setting, lighting, lens and framing, colors and mood, then material and texture details. Output ONLY the paragraph: no title, no Markdown, no lists. Do not add real people, brands, logos or text the user did not ask for.""",
+    KIND_EDIT: """You write instructions for the Qwen-Image 2.1 image-editing model. The first attached picture is <image1>, the picture to edit; further pictures are <image2>, <image3> and so on. Turn the user's request (often short, often in Chinese) into ONE instruction in English. Output ONLY the instruction: no title, no Markdown, no explanation.
+
+- Editing <image1>: start with the concrete change and its new state, e.g. "Change the headscarf of the woman in <image1> to red, keeping its shape, folds, material and shading." Then ONE short keep clause naming only what really stays: identity, expression, pose, other clothing, background, composition, lighting. Do not describe the unchanged areas again, or the model redraws them. Make the requested change clearly visible. If the pose changes, never ask to keep the pose; if the background is replaced, never ask to keep the background. When an object moves, say what surface shows where it was.
+- New picture of a subject from the pictures: point the identity to the picture ("the woman from <image1>") instead of re-describing her face, say what each picture provides (identity, outfit, background or style), then describe the new pose, scene, camera and light.
+- Taking an outfit, accessory or style from a reference: name which picture gives it ("the outfit from <image2>") and which picture receives it.
+- Write visible geometry: which surface someone sits on, what each hand touches, where the feet rest, which body parts are fully in frame. Turn "do not crop the feet" into "both feet and the floor beneath them are fully visible".
+- Light: source, direction, softness and color, only when it matters for the request.
+- Text in the picture: quote every target text exactly in double quotes and give its position, size and color. Never put instructions such as "no watermark" or "high quality" in quotes.
+- Keep every specific thing the user asked for; do not replace it with generic beautifying words. A short request stays short: 1 to 4 sentences.
+- Do not add real people, brands, logos or text the user did not ask for.""",
     KIND_OUTPAINT: """You write prompts for Qwen-Image outpainting. The attached picture will be placed on a larger canvas and the model paints the new area around it. Write ONE English paragraph of 50 to 110 words that describes the WHOLE final image: first what the picture already shows (subject, setting, style, lighting, colors), then what naturally continues into the new area on the given sides, keeping the same perspective, horizon, light direction and style. Follow the user's wish for the new area if one is given. Output ONLY the paragraph: no title, no Markdown, no lists. Do not add real people, brands, logos or text that are not in the picture or the user's wish.""",
 }
+
+
+def edit_request(request, task, pictures):
+    """User message for KIND_EDIT: the request, the chosen task type and which <imageN> tags exist."""
+    tags = ", ".join(f"<image{i}>" for i in range(1, pictures + 1))
+    parts = [f"Request: {request.strip()}", f"Pictures: {tags}. <image1> is the picture to edit."]
+    if EDIT_TASKS.get(task):
+        parts.append(f"Task type: {EDIT_TASKS[task]}")
+    return "\n\n".join(parts)
 
 
 def outpaint_request(wish, sides):
@@ -116,8 +146,8 @@ def build_user_message(kind, idea, style="", seconds=None, shots=None, shot_seco
     picture_only = ("Bring the attached picture to life as a video. Keep only the people, animals and objects that "
                     "are in the picture; the motion comes from natural movement such as light, wind, water, people "
                     "already in it, and one slow camera move.")
-    if kind == KIND_OUTPAINT:
-        return idea     # outpaint_request() already wrote the whole message
+    if kind in (KIND_OUTPAINT, KIND_EDIT):
+        return idea     # outpaint_request() / edit_request() already wrote the whole message
     parts = [(idea or "").strip() or picture_only]
     if kind == KIND_IMAGE:
         if images:

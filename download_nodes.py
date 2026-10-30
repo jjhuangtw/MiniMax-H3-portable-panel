@@ -30,6 +30,9 @@ NODES = [
     # Provides UnetLoaderGGUF for the default Q4_K_M diffusion models (Apache-2.0).
     ("comfyui_gguf_loader", "ChrisColeTech/ComfyUI-GGUF-Loader",
      "b8486409e0cba3626c09c973078953b2255cb4da"),
+    # Open-H3-Regenerate-2K refine: LoRA + Sharp curve branches patch, exact sigmas, audio lock (MIT).
+    ("ComfyUI-OpenH3-Regenerate2K", "Songssx/ComfyUI-OpenH3-Regenerate2K",
+     "adf6af360d8f3cfaa473ef2ed254d7a787bfb169"),
 ]
 # TimelineDirector stays for its MiniMaxH3LockAudioLatent node: 對嘴 and 參考「整條照用」 lock the
 # uploaded audio into the latent with it.

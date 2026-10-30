@@ -4,9 +4,10 @@
 
 ## ComfyUI 版本
 
-本面板在 **ComfyUI v0.38.0** 上實測通過（2026-09-30：文生 4 秒、Ref2VA 單圖 4 秒、擴圖皆正常）。`setup.bat` 下載的 portable 也固定為 v0.38.0。
+本面板在 **ComfyUI v0.41.0** 上實測通過（2026-10-18：文生 4 秒 79 秒、Ref2VA 單圖 4 秒 68 秒、Qwen-Image 修圖與擴圖皆正常）。`setup.bat` 下載的 portable 也固定為 v0.41.0。
 
-- 從 v0.37.0 升級：`ComfyUI` 資料夾是 git checkout（detached HEAD），做法是 `git stash` → `git fetch --tags` → `git checkout v0.38.0` → `git stash pop`（保留本機 `main.py`／`app/logger.py` 的 UTF-8 主控台修正），再用 `python_embeded\python.exe -m pip install -r requirements.txt`。v0.38.0 對齊的套件：`comfyui-frontend-package==1.53.6`、`comfyui-workflow-templates==0.11.70`、`comfy-kitchen==0.2.36`（`comfy-aimdo` 仍 0.5.5）；不再需要 torchaudio。升級前的 commit 記在 `comfy_prev_commit.txt`（`73c9bad4`，可 `git checkout` 退回）。
+- 升級做法：`ComfyUI` 資料夾是 git checkout（detached HEAD），`git stash` → `git fetch --tags` → `git checkout v0.41.0` → `git stash pop`（保留本機 `main.py`／`app/logger.py` 的 UTF-8 主控台修正），再用 `python_embeded\python.exe -m pip install -r requirements.txt`。v0.41.0 對齊的套件：`comfyui-frontend-package==1.55.17`、`comfyui-workflow-templates==0.11.84`、`comfyui-embedded-docs==0.5.14`、`comfy-kitchen==0.2.37`、`comfy-aimdo==0.5.6`。升級前的 commit 記在 `comfy_prev_commit.txt`（v0.38.0 = `6b747c04`，可 `git checkout` 退回）。v0.41.1～v0.41.3 只更新工作流程範本與雲端合作節點，與本面板無關。
+- v0.39～v0.41 與本面板相關的更新：Qwen-Image 2.1 選 int8／int4 KV 快取時的當機修正、低顯存下的 Qwen 2.1 修正、H3 VAE offload 修正、H3 embedding 暫存提早釋放、支援 H3 LightVAE。
 - v0.38.0 與本面板相關的更新：Qwen-Image 2.1 Fun ControlNet Union 支援（↔️ 擴圖需要）、MiniMax-H3 Fun-ControlNet-Union 2.0、H3 VAE 分塊接縫與 offload 當機修正、SeedVR2 加速、TextGenerate 新增 system_prompt。
 - 舊紀錄：升級到 v0.36.0 時要一併把 `comfy-aimdo` 升到 0.5.3，否則收尾階段會丟 `'MallocGraph' object has no attribute 'rogue_count'`。
 
@@ -34,11 +35,14 @@
 - 面板預設使用 Heretic 版；該檔案不存在時自動退回原版 NVFP4 AWQ。
 - 它移除的是 Qwen3-VL 聊天拒答；H3 只取提示詞隱藏狀態，畫面通常只有細微差異。H3 能否畫出某類內容主要取決於擴散模型的訓練資料，這部分要靠 LoRA。
 - 擴散模型可在「模型設定」挑選：FL2VA 一個選單（文生／首尾幀／3D 攝影機／編劇），Ref2VA 一個選單（參考影音／V2V／對嘴）。清單同時列出 `.gguf` 與 `.safetensors`，載入器依副檔名自動選 `UnetLoaderGGUF` 或 `UNETLoader`。預設仍是兩個 Q4_K_M GGUF；目錄內的 pruned INT8 convrot（各 20,970,379,616 bytes）可直接選用，畫質較好但較慢、顯存吃更多。
-- `DasiwaMinimaxH3_dasiwaHybridTurboV2_int8.safetensors`（20,967,669,168 bytes）：Civitai「⛩️💀 DaSiWa MiniMax H3 💀⛩️」DaSiWa Hybrid **Turbo** v2，SHA-256 `37C17FD9…A2D03A6B` 與官方一致（由 civitai.red 鏡像取得，雜湊比對確認為同一檔）。混合模型，REF2VA 與 FL2VA 兩條路徑皆可用；本機以「模型內建蒸餾・8 步」實測 864×480／4 秒約 83 秒。
+- 社群混合模型（2026-10-30 換新，舊的 DaSiWa Turbo v2 與 10Eros beta5 已刪除）：兩個都內建 Turbo，REF2VA 與 FL2VA 兩條路徑皆可用，下載方式見 `NSFW_MODELS.md`。
+  - `DasiwaMinimaxH3_dasiwaHybridV4Turbo_int8.safetensors`（20,967,668,616 bytes，SHA-256 `36471AFB…EE82B2D6` 與 Civitai 一致）：DaSiWa Hybrid **v4 Turbo**，4 步。864×480／4 秒約 29 秒。
+  - `10Eros_Max_h3_8stepTURBO_beta7_int8HQ.safetensors`（22,893,150,024 bytes，SHA-256 `8a51ca3f…07814fd6e`，`TenStrip/10Eros-Max` 版本 `682e73d1`）：8 步，作者建議 shift 12/3、euler／simple，與面板設定相同。864×480／4 秒約 54 秒。
 - 非蒸餾的 DaSiWa Hybrid v2（20,967,669,160 bytes，SHA-256 `4CB8E1EA…56D25F8`）已移出模型目錄，現放在 `_unused_models/`，可自行刪除以釋放 21 GB。其 `final_layer.video_out` 與 ref2va 距離 0.0077、與 fl2va 0.0428，基底主幹為 Ref2VA，但兩條路徑同樣都實測可用（FL2VA 20 步約 160 秒、Ref2VA 20 步約 245 秒）。
 - **採樣模式**（各分頁的下拉選單，取代原本的 Turbo 勾選）：
   - `Turbo LoRA・4 步`：官方 Q4／INT8 模型用，套用 Turbo LoRA、CFG 1。
   - `模型內建蒸餾・8 步`：DaSiWa Turbo 這類已蒸餾的權重用，**不套 Turbo LoRA**、CFG 1。兩種蒸餾不可疊加。
+  - `模型內建蒸餾・4 步`：同上，給 4 步蒸餾的權重（DaSiWa v4 Turbo）。檔名含 `v4turbo`／`4turbo`／`4step` 時選模型會自動切換到這個模式。
   - `非蒸餾・20 步`：CFG 2.5，DaSiWa 非蒸餾版與原始權重用。
 - 額外 LoRA 以 `LoraLoaderModelOnly` 疊在 Turbo LoRA 之後（節點 9），強度 -2～2。FL2VA 與 Ref2VA 是不同模型，LoRA 要選對應版本。新放入的檔案若後端找不到，執行 `restart_webui.bat`。
 
@@ -96,6 +100,18 @@
 - 本機實測（4 秒、Turbo、模型已快取）：1280×704 約 135 秒；1920×1088 約 291 秒。兩者 GPU 記憶體用量都接近 24 GB（DynamicVRAM 會盡量用滿）。
 - 超過官方 1344×768 面積的解析度（Full HD 選項）必須勾選高清二次採樣，否則會直接提示。
 
+## 🌟 2K 精修（Open-H3-Regenerate-2K）
+
+「文生影音」與「FL2VA 首尾幀影音」分頁勾選「🌟 2K 精修」後輸出 2560×1440：固定先以 1344×768 跑一般草稿（採樣模式照你選的），拆出視訊潛空間，在 **CPU（fp32）** 上用 3D 潛空間放大模型放到 2560×1440，再以 2K 條件、Ref2VA INT8 主幹加上 NVIDIA 的精修 LoRA 與 50 組 Sharp 曲線分支、精確 sigma 跑 euler 3 步（CFG 1，音軌鎖住不重畫）。勾選後會忽略解析度選單與高清二次採樣；最長 5 秒（超過會自動改成 5 秒）；3D 攝影機與 Ref2VA 不支援；顯存 < 22 GB 時關閉。
+
+- 節點：https://github.com/Songssx/ComfyUI-OpenH3-Regenerate2K （MIT，版本 `adf6af360d8f3cfaa473ef2ed254d7a787bfb169`），`download_nodes.py`／`install.bat` 會安裝。
+- 模型（`download_open_h3_regenerate.py`／`download_extras.bat` 選項 9，可續傳並核對 SHA-256；放大模型另需選項 5）：
+  - `ComfyUI/models/loras/open_h3/open_h3_regenerate_2k_lora.safetensors`（12,452,449,080 bytes，`Efficient-Large-Model/Open-H3-Regenerate-2K` 版本 `5809c337`）。放在 `open_h3/` 子資料夾，影片分頁的 LoRA 選單不列它：它只能和曲線分支、精修 sigma 一起用。
+  - `ComfyUI/models/open_h3_regenerate/lora/sharp_curve_branches.safetensors`（1,238,746,768 bytes，同上）。
+  - `ComfyUI/models/diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors`（20,970,379,616 bytes，`Comfy-Org/MiniMax-H3`；已有就跳過）。
+- 放大器放在 GPU 跑 2560×1440 的 Conv3d 會讓後端直接中止（Fatal Python error），所以固定用 CPU，約多 1 分鐘。
+- 4090 實測（2026-10-29，Turbo 草稿）：2 秒 447 秒（草稿 36 秒、精修 1 分 47 秒）；5 秒 1556 秒（草稿 1 分 39 秒、精修 9 分 29 秒）。其餘約 15 分鐘是載入模型、CPU 放大與 2K VAE 解碼。畫質明顯優於高清二次採樣，沒有融化或閃爍；趕時間仍建議用 ✨ 高清二次採樣（1080p，約 5 分鐘）。
+
 ## 🖍️ 筆刷修圖（畫幾筆 → AI 生成新圖）
 
 - 上傳圖片，用筆刷（綠／紅／藍／黃／紫／白／黑，可調粗細、有橡皮擦）在想改的地方畫幾筆，選「筆畫的用途」並寫一句要變成什麼（中文可），按生成。靈感來自 YouTube Shorts「Best Rendering AI Tool」的塗鴉改圖示範。
@@ -103,6 +119,12 @@
 - 做法：沿用「🖌️ 修圖」的 Qwen-Image-2.1 與其模型設定，把**原圖當 `<image1>`、畫了筆畫的圖當 `<image2>`**，提示詞要求依 `<image2>` 筆畫的位置修改 `<image1>`、其餘不變、結果不得留筆畫。實測只送畫了筆畫的單張圖時，新物件會偏離筆畫位置；兩張一起送則準確落在筆畫上。
 - 沒畫筆畫就按生成會提示；結果可按「🔄 用結果繼續畫」接著改下一處，或套用到首尾幀／參考分頁。RTX 4090：1024 解析度、25 步每張約 17～26 秒（第一次載入模型較久）。
 - 速度主要取決於「輸出解析度」而不是模型大小：預設把長邊縮到約 1024；選「0 原圖像素」時 2400×1792（4.3 MP）的照片每步約 8 秒、整張約 3.5 分鐘。舊版把預設誤判成 0（標籤「1024」裡有 0），修圖與筆刷修圖都受影響，現已改為依標籤精確對應。
+
+## 🖌️ 修圖：Turbo 與 ✨ AI 修圖指令
+
+- **Qwen-Image-2.1 Turbo**：`ComfyUI/models/diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors`（7,256,787,829 bytes，SHA-256 `8144a018…e967314c`，`Comfy-Org/Qwen-Image-2.1`）。蒸餾版，8 步、CFG 1。檔案存在時面板預設用它；在「⚙️ 模型與 KV 快取設定」換模型時，修圖／筆刷修圖／擴圖三個分頁的步數會自動切換（Turbo 8 步、一般 25 步）。`download_qwen_image_models.py` 預設下載 Turbo，`--base` 下載一般版。
+- 實測（2026-10-18，同提示詞、同種子對照一般版 25 步）：修圖 7～17 秒（一般版 14～19 秒）、擴圖 9～13 秒（一般版 25～33 秒），畫質相當；擴圖用的 Fun ControlNet 可直接搭配 Turbo。
+- **✨ AI 修圖指令**：主圖上方輸入一句中文、選修圖類型（自動判斷／局部修改／參考主體創作新畫面／套用參考服裝風格／畫面文字），本機 Qwen3-VL 看主圖（和 `<image2>`）寫成英文指令。規則改寫自 [ZSeven-W/craft-skills 的 qwen-image-gen](https://github.com/ZSeven-W/craft-skills/tree/main/skills/qwen-image-gen)（MIT）：先寫要改什麼和改成什麼，再用一句保留條款鎖住不改的部分，不重新描述未修改區域；身分指向 `<imageN>`；寫可見的幾何關係（坐在哪、雙腳入鏡）；畫面文字逐字加引號。實測「西裝外套換酒紅色」只改外套；「坐在窗邊木椅看書、全身入鏡」換成新姿勢且雙腳完整入鏡。第一次約 80 秒（載入模型），之後約 5 秒。
 
 ## ↔️ 擴圖（Outpaint）
 

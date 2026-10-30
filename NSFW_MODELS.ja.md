@@ -2,7 +2,7 @@
 
 [繁體中文](NSFW_MODELS.md) | [English](NSFW_MODELS.en.md) | [简体中文](NSFW_MODELS.zh-CN.md) | **日本語**
 
-> **18 歳以上限定。** 以下は、コミュニティの作者が MiniMax H3 をファインチューニングした第三者のモデルで、それぞれ 14～21 GB あります。
+> **18 歳以上限定。** 以下は、コミュニティの作者が MiniMax H3 をファインチューニングした第三者のモデルで、それぞれ約 21～23 GB あります。
 > パネルのインストーラーはこれらを**ダウンロードしません**。このリポジトリにも含まれず、配布もしていません。各自でダウンロードし、
 > 作者のライセンスを読み、このページ末尾の利用ルールを守ってください。
 >
@@ -12,13 +12,14 @@
 
 | モデル | ファイルサイズ | VRAM | 使えるメニュー |
 | --- | --- | --- | --- |
-| **10Eros-Max** beta5 Turbo ハイブリッド w4a8 | 14.0 GB | 24 GB 以上（RTX 4090 で検証済み） | FL2VA ＋ Ref2VA |
-| **DaSiWa MiniMax H3** Hybrid Turbo v2 INT8 | 21.0 GB | 24 GB 以上（RTX 4090 で検証済み） | FL2VA ＋ Ref2VA |
+| **10Eros-Max** beta7 8-step Turbo int8HQ | 22.9 GB | 24 GB 以上（RTX 4090 で検証済み） | FL2VA ＋ Ref2VA |
+| **DaSiWa MiniMax H3** Hybrid v4 Turbo int8 | 21.0 GB | 24 GB 以上（RTX 4090 で検証済み） | FL2VA ＋ Ref2VA |
 
 どちらも**ハイブリッドモデル**（1 つのファイルが FL2VA と Ref2VA の両方のメニューに表示されます）で、**Turbo 蒸留が組み込み済み**です。
-8 ステップで動き、Turbo LoRA は不要です。どちらか一方で十分です。
+Turbo LoRA は不要で、10Eros beta7 は 8 ステップ、DaSiWa v4 Turbo は 4 ステップ（より速い）で動きます。4090 での実測（864×480／4 秒）は
+DaSiWa v4 Turbo が約 29 秒、10Eros beta7 が約 54 秒でした。どちらか一方で十分です。
 
-VRAM 12～16 GB の場合：より小さい版もありますが、**このパネルではどれも未検証**です。DaSiWa の int4 ファイル（12.5 GB、下記参照）と、
+VRAM 12～16 GB の場合：より小さい版もありますが、**このパネルではどれも未検証**です。DaSiWa の int4 ファイル（12.5／16.8 GB、下記参照）と、
 コミュニティによる 10Eros-Max の GGUF 版（[Abiray/10Eros-Max-GGUF](https://huggingface.co/Abiray/10Eros-Max-GGUF)、Q3_K_M 8.9 GB · Q4_K_M 11.6 GB）。
 GGUF 版は**以前のテスト版（Test4）**をもとにしています。サンプリング設定はそのモデルページの説明に従ってください。
 
@@ -33,27 +34,30 @@ GGUF 版は**以前のテスト版（Test4）**をもとにしています。サ
 - `setup.bat` でインストールした場合：`setup.bat のあるフォルダー\ComfyUI_windows_portable\ComfyUI\models\diffusion_models\`
 - 手動でインストールした場合：`run_webui.bat` の隣にある `ComfyUI\models\diffusion_models\`
 
-**ダウンロードしたときのファイル名のままにしてください。** パネルはファイル名で判断します。ファイル名に `Turbo` があるとサンプリングモードが
-自動で **Built-in distill · 8 steps** に切り替わり、`10Eros`／`Dasiwa` があるとメニューにラベルが表示されます。名前を変える場合も、これらの語は残してください。
+**ファイル名のキーワードは残してください。** パネルはファイル名で判断します。ファイル名に `Turbo` があるとサンプリングモードが自動で
+組み込み蒸留に切り替わり（`v4Turbo`／`4turbo`／`4step` もあれば 4 ステップ、なければ 8 ステップ）、`10Eros`／`Dasiwa` があるとメニューにラベルが表示されます。
+名前を変える場合も、これらの語は残してください（`DasiwaMinimaxH3_dasiwaHybridV4Turbo_int8.safetensors` なら大丈夫です）。
 
 ## 1. 10Eros-Max（TenStrip）
 
 - モデルページ：https://huggingface.co/TenStrip/10Eros-Max（*Not-For-All-Audiences* 指定。ライセンス：MiniMax H3 Community License）
-- ファイル：`10Eros_Max_h3_TURBO-hybrid_beta5_w4a8_14gb_optimized.safetensors`（13,997,668,774 bytes）
+- ファイル：`10Eros_Max_h3_8stepTURBO_beta7_int8HQ.safetensors`（22,893,150,024 bytes）
 - 直接ダウンロード：
-  https://huggingface.co/TenStrip/10Eros-Max/resolve/8a198588c8870ab0d613b3492a3150d091c8c2dd/10Eros_Max_h3_TURBO-hybrid_beta5_w4a8_14gb_optimized.safetensors
-- SHA-256：`a8067999c65594b462d581c02b8a0573dd42d9812a14c586150a947c13388f2e`
-- **beta5** を使ってください。作者によると beta3／beta4 は壊れたテスト版です。
+  https://huggingface.co/TenStrip/10Eros-Max/resolve/682e73d12dcaf766dd31b4bb2991084119c2df8c/10Eros_Max_h3_8stepTURBO_beta7_int8HQ.safetensors
+- SHA-256：`8a51ca3f7d290a799d89fefcde4ede60962256955a91dfe4746d3cc07814fd6e`
+- 同じページのほかのファイルは**不要**です：`…_8stepTURBO_beta7.safetensors`（40 GB の非圧縮版。24 GB の GPU には載りません）、`…_raw_beta7_int8`（Turbo なし、20 ステップ必要）。
+  作者は beta5 か beta7 を推奨し、beta6 は避けるよう書いています。
+- 作者によると、1 パスのサンプリングでは背景がちらつくことがあります。こちらの 4 秒テストでは出ませんでした。
 
 ## 2. DaSiWa MiniMax H3（Civitai）
 
-- モデルページ：https://civitai.com/models/2877206/dasiwa-minimax-h3
-- ページで **DaSiWa Hybrid Turbo v2** のバージョンを選び、**int8** と表示されたファイル（約 20.5 GB）をダウンロードします。このページを表示するには
+- モデルページ：https://civitai.com/models/2877206?modelVersionId=3392061
+- **DaSiWa Hybrid v4 Turbo**（4 ステップ）のバージョンページです。**int8** と表示されたファイル（約 21 GB）をダウンロードします。このページを表示するには
   Civitai の無料アカウントにログインし、成人向けコンテンツの表示をオンにする必要があります。各自で設定してください。
-- ファイル：`DasiwaMinimaxH3_dasiwaHybridTurboV2_3203135.safetensors`（20,967,669,168 bytes）
-- SHA-256：`37C17FD91971C17E02E60798A05EEC48D881E1BB970D6309F58CF134A2D03A6B`
-- 同じバージョンに **int4** ファイル（`…_3203313.safetensors`、約 12.5 GB）もあり、16 GB の GPU で使える可能性がありますが、**このパネルでは未検証**です。
-- Turbo でない「Hybrid v2」も使えますが、**Not distilled · 20 steps** を選ぶ必要があり、速度は 2～3 倍遅くなります。
+- ファイル：`DasiwaMinimaxH3_dasiwaHybridV4Turbo_3281858.safetensors`（20,967,668,616 bytes。`DasiwaMinimaxH3_dasiwaHybridV4Turbo_int8.safetensors` に改名しても大丈夫です）
+- SHA-256：`36471AFB817747B711B9ABAD3D8E6B7C88A7C2B91B4887D040A8DCB7EE82B2D6`
+- 同じバージョンに **int4** ファイルが 2 つ（約 12.5 GB と 16.8 GB）あり、16 GB の GPU で使える可能性がありますが、**このパネルでは未検証**です。
+- Turbo でない「Hybrid v4」も使えますが、**Not distilled · 20 steps** を選ぶ必要があり、かなり遅くなります。
 
 ## ダウンロードが完全か確認する
 
@@ -61,7 +65,7 @@ GGUF 版は**以前のテスト版（Test4）**をもとにしています。サ
 比べてください（大文字・小文字は区別しません）：
 
 ```bat
-certutil -hashfile 10Eros_Max_h3_TURBO-hybrid_beta5_w4a8_14gb_optimized.safetensors SHA256
+certutil -hashfile 10Eros_Max_h3_8stepTURBO_beta7_int8HQ.safetensors SHA256
 ```
 
 ## パネルでの使い方
@@ -70,9 +74,9 @@ certutil -hashfile 10Eros_Max_h3_TURBO-hybrid_beta5_w4a8_14gb_optimized.safetens
 2. パネル上部の **🧩 Model settings** を開き、**🔄 Rescan** を押します。それでも表示されない場合は `restart_webui.bat` を実行します。
 3. **FL2VA diffusion model** メニュー（Text to Video / Keyframes / 3D Camera / Storyboard）または **Ref2VA diffusion model** メニュー
    （Reference / V2V / Lip-sync）で選びます。
-4. サンプリングモード：**Built-in distill · 8 steps**。モデルを選ぶと自動で切り替わります。Turbo LoRA を重ねないでください。
-5. 21 GB の DaSiWa は **✨ HD two-pass** と組み合わせられません（読み込むとアップスケーラーに使う VRAM が足りなくなるため）。864×480 か 960×544 で
-   生成し、🔍 Upscale タブで解像度を上げてください。14 GB の 10Eros は、24 GB の GPU なら HD two-pass を使えます。
+4. サンプリングモード：10Eros beta7 は **Built-in distill · 8 steps**、DaSiWa v4 Turbo は **Built-in distill · 4 steps**。モデルを選ぶと自動で切り替わります。Turbo LoRA を重ねないでください。
+5. どちらも 20 GB を超えるため **✨ HD two-pass** と組み合わせられません（読み込むとアップスケーラーに使う VRAM が足りなくなるため）。864×480 か 960×544 で
+   生成し、🔍 Upscale タブで解像度を上げてください。
 
 任意：無検閲の **Heretic** テキストエンコーダーは `download_extras.bat` の **6** 番です。言語モデルの拒否をなくすだけで、何を描けるかは上記の拡散モデル次第です。
 

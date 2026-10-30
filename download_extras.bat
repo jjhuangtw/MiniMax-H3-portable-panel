@@ -27,6 +27,7 @@ echo   5. HD two-pass latent upscaler (24 GB cards only)    (~0.7 GB)
 echo   6. Heretic uncensored text encoder                   (~16 GB)
 echo   7. AI prompt writer for the "AI prompt" buttons      (~5 GB, included in 1)
 echo   8. Outpaint tab - Qwen-Image Fun ControlNet (needs 3) (~3.8 GB)
+echo   9. 2K refine (Open-H3-Regenerate, 24 GB, needs 5)   (~35 GB)
 echo   A. Recommended set: 1 + 4
 echo   Q. Quit  (or just press Enter)
 echo.
@@ -48,6 +49,7 @@ if "!PICK!"=="5" call :run download_hd_models.py
 if "!PICK!"=="6" call :run download_heretic_encoder.py
 if "!PICK!"=="7" call :run download_prompt_llm.py
 if "!PICK!"=="8" call :run download_qwen_controlnet.py
+if "!PICK!"=="9" call :run download_open_h3_regenerate.py
 goto :menu
 
 :run

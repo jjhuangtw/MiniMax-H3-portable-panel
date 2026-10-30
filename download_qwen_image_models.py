@@ -1,7 +1,8 @@
 """Download Qwen-Image-2.1 models for image editing into ComfyUI models directories.
 
 Supports official ComfyUI model weights from Comfy-Org/Qwen-Image-2.1.
-- Diffusion Model: qwen_image_2.1_int8_convrot.safetensors (7.25 GB, fits RTX 4090 24GB) or bf16
+- Diffusion Model: qwen_image_2.1_turbo_int8_convrot.safetensors (7.26 GB, 8 steps, the default);
+  --base for qwen_image_2.1_int8_convrot.safetensors (25 steps), or bf16
 - Text Encoder: qwen3vl_8b_int8_convrot.safetensors (9.35 GB) or w4a8 (5.88 GB) or bf16
 - VAE: qwen_image_2.1_vae_bf16.safetensors (675 MB)
 """
@@ -31,6 +32,12 @@ FILES = {
         "local": "diffusion_models/qwen_image_2.1_int8_convrot.safetensors",
         "size": 7256783064,
         "desc": "Qwen-Image-2.1 DiT Int8 ConvRot (~7.25 GB, RTX 4090 推薦)",
+    },
+    "diffusion_turbo_int8": {
+        "remote": "diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors",
+        "local": "diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors",
+        "size": 7256787829,
+        "desc": "Qwen-Image-2.1 Turbo DiT Int8 ConvRot (~7.26 GB, 8 步 · CFG 1，約快 3 倍)",
     },
     "diffusion_bf16": {
         "remote": "diffusion_models/qwen_image_2.1_bf16.safetensors",
@@ -149,6 +156,7 @@ def check_qwen_image_ready():
     diff_ok = any(
         (MODELS_DIR / "diffusion_models" / name).exists()
         for name in [
+            "qwen_image_2.1_turbo_int8_convrot.safetensors",
             "qwen_image_2.1_int8_convrot.safetensors",
             "qwen_image_2.1_bf16.safetensors",
             "qwen_image_2.1_Q8_0.gguf",
@@ -169,6 +177,7 @@ def main():
     parser.add_argument("--gguf", nargs="?", const="q8_0", default=None,
                         help="Download GGUF quantized model (choices: q8_0, q6_k, q5_k_m, q4_k_m; default: q8_0).")
     parser.add_argument("--bf16", action="store_true", help="Download unquantized BF16 weights instead of int8.")
+    parser.add_argument("--base", action="store_true", help="Download the base int8 model (25 steps) instead of Turbo (8 steps).")
     parser.add_argument("--w4a8", action="store_true", help="Download W4A8 text encoder (smaller, ~5.88 GB).")
     parser.add_argument("--vae-only", action="store_true", help="Download only the VAE.")
     parser.add_argument("--encoder-only", action="store_true", help="Download only the text encoder.")
@@ -199,8 +208,10 @@ def main():
             download_gguf(args.gguf)
         elif args.bf16:
             download_item("diffusion_bf16")
-        else:
+        elif args.base:
             download_item("diffusion_int8")
+        else:
+            download_item("diffusion_turbo_int8")
 
     print("\n✨ Qwen-Image-2.1 模型配置已就緒！可在面板「🖌️ 修圖」分頁立即使用。")
 

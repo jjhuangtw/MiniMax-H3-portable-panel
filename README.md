@@ -52,7 +52,7 @@ Krea2 圖片風格 LoRA：
 ## 安裝：一鍵
 
 **最省事**：下載 **[`setup.bat`](../../raw/main/setup.bat)**（右鍵 ▸ 另存連結），放進一個**空資料夾**（所在磁碟需約 200 GB），
-**雙擊**它。它會下載 ComfyUI portable（固定 v0.38.0）、面板與核心 H3 模型，最後開啟面板，全程免 git、免 7-Zip。
+**雙擊**它。它會下載 ComfyUI portable（固定 v0.41.0）、面板與核心 H3 模型，最後開啟面板，全程免 git、免 7-Zip。
 中斷了再執行一次即可續傳。Windows SmartScreen 若跳出「無法辨識的應用程式」，按 **「其他資訊 ▸ 仍要執行」**
 （這是未簽章的 `.bat`，只會下載下列檔案）。
 
@@ -61,7 +61,7 @@ Krea2 圖片風格 LoRA：
 ## 安裝：手動三步
 
 **1. 取得 ComfyUI portable。** 從 [ComfyUI releases](https://github.com/comfyanonymous/ComfyUI/releases) 下載
-   `ComfyUI_windows_portable_nvidia.7z`（用**最新版**即可，面板在 v0.38.0 測試），用 [7-Zip](https://www.7-zip.org/) 解壓，
+   `ComfyUI_windows_portable_nvidia.7z`（用**最新版**即可，面板在 v0.41.0 測試），用 [7-Zip](https://www.7-zip.org/) 解壓，
    會得到一個含 `python_embeded\` 與 `ComfyUI\` 的資料夾。
 
 **2. 加入面板。** 在本頁按 **Code ▸ Download ZIP**，解壓後把裡面**所有檔案**複製進步驟 1 的資料夾，讓 `install.bat` 和
@@ -71,10 +71,11 @@ Krea2 圖片風格 LoRA：
    之後平常雙擊 **`run_webui.bat`**，打開 http://127.0.0.1:7860 即可。`install.bat` 可續傳，中斷了再執行一次。
 
 **選用模型**：雙擊 **`download_extras.bat`**，輸入數字：
-1 Krea2 圖片模型（🎨 分頁，約 19 GB）· 2 Krea2 風格 LoRA · 3 Qwen-Image-2.1（🖌️ 修圖分頁，約 17 GB）·
+1 Krea2 圖片模型（🎨 分頁，約 19 GB）· 2 Krea2 風格 LoRA · 3 Qwen-Image-2.1 Turbo 加速版（🖌️ 修圖／🖍️ 筆刷／↔️ 擴圖，8 步，約 17 GB）·
 4 SeedVR2（🔍 放大分頁，約 7 GB）· 5 高清二次採樣放大模型（24 GB 顯卡）· 6 Heretic 文字編碼器 ·
 7 ✨ AI 專業提示詞（約 5 GB；選 1 或 3 時已包含）·
-8 ↔️ 擴圖分頁的 Fun ControlNet（約 3.8 GB，需先裝 3）。
+8 ↔️ 擴圖分頁的 Fun ControlNet（約 3.8 GB，需先裝 3）·
+9 🌟 2K 精修 Open-H3-Regenerate（24 GB 顯卡，約 35 GB，需先裝 5）。
 缺模型的分頁會直接告訴你要選哪個數字。
 
 **🔞 成人向社群模型（18 歲以上，自行下載）**：安裝程式不會下載。10Eros-Max 與 DaSiWa 去哪裡下載、放在哪個資料夾、
@@ -116,6 +117,7 @@ Krea2 圖片風格 LoRA：
 | Qwen3-VL-32B NVFP4 文字編碼器 / INT8 視訊 VAE | 文字編碼、省顯存解碼 | Qwen 團隊（阿里巴巴）· Comfy-Org — [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3) |
 | Qwen3-VL-32B Heretic（無審查）編碼器 | 選用 | sakamakismile — [Qwen3-VL-32B-Heretic-MiniMax-H3-NVFP4](https://huggingface.co/sakamakismile/Qwen3-VL-32B-Heretic-MiniMax-H3-NVFP4) |
 | H3 latent upscaler 3D | 高清二次採樣 | LBH-123-AI — [Minimax_h3_latent_Upscaler](https://huggingface.co/LBH-123-AI/Minimax_h3_latent_Upscaler) |
+| Open-H3-Regenerate-2K（LoRA＋Sharp 曲線分支） | 🌟 2K 精修 | NVIDIA — [Efficient-Large-Model/Open-H3-Regenerate-2K](https://huggingface.co/Efficient-Large-Model/Open-H3-Regenerate-2K) |
 | SeedVR2 3B + EMA VAE | 🔍 影片放大 | ByteDance Seed — [ByteDance-Seed/SeedVR](https://github.com/ByteDance-Seed/SeedVR) · ComfyUI 權重：numz [numz/SeedVR2_comfyUI](https://huggingface.co/numz/SeedVR2_comfyUI) |
 | Krea 2 Turbo + 風格 LoRA | 🎨 圖片分頁、範本縮圖 | Krea — ComfyUI 打包：Comfy-Org [Comfy-Org/Krea-2](https://huggingface.co/Comfy-Org/Krea-2) |
 | Qwen-Image-2.1 + Qwen3-VL 8B | 🖌️ 修圖 | Qwen 團隊 — [Qwen/Qwen-Image-2.1](https://huggingface.co/Qwen/Qwen-Image-2.1) · [Comfy-Org/Qwen-Image-2.1](https://huggingface.co/Comfy-Org/Qwen-Image-2.1) · 選用 GGUF：[AlperKTS](https://huggingface.co/AlperKTS/Qwen-Image-2.1-GGUF)、[abenzerps](https://huggingface.co/abenzerps/Qwen-Image-2.1-GGUF) |
@@ -130,10 +132,12 @@ Krea2 圖片風格 LoRA：
 | ComfyUI-GGUF-Loader | 載入 Q4 GGUF 模型 | ChrisColeTech — [ChrisColeTech/ComfyUI-GGUF-Loader](https://github.com/ChrisColeTech/ComfyUI-GGUF-Loader) |
 | ComfyUI-MiniMaxH3-TimelineDirector | 對嘴音軌鎖定 | Songssx — [Songssx/ComfyUI-MiniMaxH3-TimelineDirector](https://github.com/Songssx/ComfyUI-MiniMaxH3-TimelineDirector) |
 | Comfyui_Minimax_h3_latent_Upscaler | 高清二次採樣節點 | LBH-123-AI — [LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler](https://github.com/LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler) |
+| ComfyUI-OpenH3-Regenerate2K | 🌟 2K 精修節點 | Songssx — [Songssx/ComfyUI-OpenH3-Regenerate2K](https://github.com/Songssx/ComfyUI-OpenH3-Regenerate2K)（MIT） |
 | 3D Camera Control for H3 | 🎥 攝影機分頁 | NyckM — [NyckM/3d-Camera-control-H3-Minimax](https://github.com/NyckM/3d-Camera-control-H3-Minimax) |
 | ComfyUI-MiniMax-H3-Edit | 攝影機提示詞編碼 | ethanfel — [ethanfel/ComfyUI-MiniMax-H3-Edit](https://github.com/ethanfel/ComfyUI-MiniMax-H3-Edit) |
 | ComfyUI-SeedVR2_VideoUpscaler | 🔍 放大節點 | numz — [numz/ComfyUI-SeedVR2_VideoUpscaler](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler) |
 | h3-prompt-writing skill | 官方提示詞格式、範本庫中的指南 | MiniMax — [MiniMax-AI/MiniMax-H3](https://github.com/MiniMax-AI/MiniMax-H3) |
+| qwen-image-gen skill | 🖌️ 修圖的 ✨ AI 修圖指令改寫規則 | Fini.Yang — [ZSeven-W/craft-skills](https://github.com/ZSeven-W/craft-skills/tree/main/skills/qwen-image-gen)（MIT） |
 | Gradio | 網頁介面 | Hugging Face — [gradio-app/gradio](https://github.com/gradio-app/gradio) |
 | FFmpeg（經由 imageio-ffmpeg） | 影片剪接 | [FFmpeg](https://ffmpeg.org/) · [imageio/imageio-ffmpeg](https://github.com/imageio/imageio-ffmpeg) |
 | 7-Zip（7zr.exe） | `setup.bat` 解壓 ComfyUI portable | Igor Pavlov — [7-zip.org](https://www.7-zip.org/) |
